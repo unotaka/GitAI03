@@ -1,0 +1,123 @@
+name: AI Notion Monitor & Developer Loop
+
+on:
+  #schedule:
+  #  # 15分ごとに自動起動 (UTC基準。毎時 0, 15, 30, 45分に実行)
+  #  - cron: '*/15 * * * *'
+  workflow_dispatch: # GitHub画面からいつでも手動で即座に実行できるボタンを設置
+
+# ワークフローがリポジトリへの書き込みやPR作成を行えるよう権限を定義
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  ai-development-flow:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. コードのチェックアウト
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # すべての分岐履歴を取得
+
+      # 2. Node.js 環境のセットアップ
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # 3. パッケージマネージャー(pnpm)のインストールと依存関係の解決
+      - name: Install Dependencies
+        run: |
+          npm install -g pnpm
+          
+          # 💡 Geminiから「Claude」用の公式SDK（@anthropic-ai/sdk）のインストールに変更
+          npm install @anthropic-ai/sdk
+          
+          # もし既存の package.json がある場合は、他の依存関係も通常通りインストール
+          if [ -f "package.json" ]; then
+            pnpm install
+          else
+            echo "🎵 package.json が直下にないため、個別インストールのみで進行します"
+          fi
+
+      # 4. Notionに「Claude生成待ち」のタスクがないかポーリング（チェック）
+      - name: Check Notion Database
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: node scripts/cron-scheduler.js
+
+      # 5. 【条件分岐】タスクがある場合のみ、専用のGitブランチを作成
+      - name: Create Feature Branch
+        if: env.TASK_ID != ''
+        run: |
+          # Gitのコミット用ユーザー情報を設定
+          git config --global user.name "Claude Developer Bot"
+          git config --global user.email "claude-bot@yourdomain.local"
+          
+          # 新しい開発用ブランチを作成して切り替え
+          git checkout -b feature/$TASK_ID
+
+      # 6. 【条件分岐】Claudeによるソースコード・テストコードの自動生成
+      - name: Run Claude Coder
+        if: env.TASK_ID != ''
+        env:
+          # 💡 AnthropicのAPIキーを環境変数として渡します
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # 💡 スクリプト名を claude-coder.js に変更（※実体ファイル名も合わせて変更してください）
+          node scripts/claude-coder.js
+
+      # 8. 【条件分岐】成果物をプッシュ（Notionの担当者名でコミット）
+      - name: Push Code
+        if: env.TASK_ID != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 💡 JSONファイルから「担当者名(ASSIGNEE)」を安全に抽出して変数に入れる
+          ASSIGNEE_NAME=$(node -e "console.log(require('./task_info.json').ASSIGNEE || 'Claude Bot')")
+          
+          echo "👤 コmit担当者: $ASSIGNEE_NAME"
+          
+          # Gitのコミットユーザー名を取得した担当者名に設定
+          git config --global user.name "$ASSIGNEE_NAME"
+          git config --global user.email "claude-bot@yourdomain.local"
+          
+          # 変更をすべてステージング
+          git add .
+          
+          # 💡 コミットメッセージの文言にも担当者名を含めることができます
+          git commit -m "feat($TASK_ID): Claudeによるコード自動生成（担当: $ASSIGNEE_NAME）"
+          
+          # リモートリポジトリへ強制プッシュ
+          git push -u origin feature/$TASK_ID --force
+          
+      # 9. 【条件分岐】すべての工程が完了したら、Notionのステータスを「Git格納済み」に更新
+      - name: Update Notion Status to Git Stored
+        if: env.TASK_ID != ''
+        run: |
+          # 💡 JSONファイルから PAGE_ID をノードのワンライナーで安全に抽出
+          PAGE_ID=$(node -e "console.log(require('./task_info.json').PAGE_ID)")
+          
+          echo "📝 Notionのタスク（ページID: $PAGE_ID）を『Git格納済み』に更新中..."
+          
+          curl -X PATCH "https://api.notion.com/v1/pages/$PAGE_ID" \
+            -H "Authorization: Bearer ${{ secrets.NOTION_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -H "Notion-Version: 2022-06-28" \
+            --data '{
+              "properties": {
+                "ステータス": {
+                  "status": {
+                    "name": "Git格納済み"
+                  }
+                }
+              }
+            }'
+          
+          echo "🎉 すべての自動化プロセスが正常に完了しました！"
