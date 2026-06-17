@@ -34,6 +34,9 @@ jobs:
         run: |
           npm install -g pnpm
           
+          # 💡 [追記] スクリプトの実行に必要な Notion 公式 SDK をインストールします
+          npm install @notionhq/client
+          
           # 💡 OAuthトークンを使用して動く CLI ツール「Claude Code」をグローバルインストール
           npm install -g @anthropic-ai/claude-code
           
