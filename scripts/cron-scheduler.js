@@ -1,14 +1,22 @@
 const fs = require('fs');
 const path = require('path');
-// 💡 インポート方法をNotion SDK v2以降の標準形式に修正（Clientを正しく初期化できるようにします）
-const { Client } = require("@notionhq/client");
+
+// 💡 100%安全なインポート形式に変更します
+// パッケージ全体を一度読み込み、そこからClientクラスが存在する形式を自動判別します
+const NotionSDK = require("@notionhq/client");
+const ClientClass = NotionSDK.Client || NotionSDK.default?.Client;
+
+if (!ClientClass) {
+  console.error("❌ Notion SDKからClientクラスを検出できませんでした。パッケージのインポート方法を確認してください。");
+  process.exit(1);
+}
 
 // 環境変数からトークンとデータベースIDを取得
 const NOTION_TOKEN = process.env.NOTION_TOKEN;
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 
 // クライアントを確実に初期化
-const notion = new Client({ auth: NOTION_TOKEN });
+const notion = new ClientClass({ auth: NOTION_TOKEN });
 
 /**
  * NotionのRichText型プロパティから安全にプレーンテキストを抽出するヘルパー関数
@@ -29,7 +37,7 @@ async function main() {
   }
 
   try {
-    // 💡 インスタンスが正しく初期化されていれば、databases.query が正常に動作します
+    // 💡 ClientClassが正しく解決されていれば、ここが正常に動作します
     const response = await notion.databases.query({
       database_id: DATABASE_ID,
       filter: {
