@@ -76,30 +76,27 @@ jobs:
           # 💡 スクリプトを呼び出し、内部で `claude` コマンドを実行させます
           node scripts/claude-coder.js
 
-      # 8. 【条件分岐】成果物をプッシュ（Notionの担当者名でコミット）
+      # 8. 【確認・修正】成果物を新しいブランチへプッシュ
       - name: Push Code
         if: env.TASK_ID != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 💡 JSONファイルから「担当者名(ASSIGNEE)」を安全に抽出して変数に入れる
-          ASSIGNEE_NAME=$(node -e "console.log(require('./task_info.json').ASSIGNEE || 'Claude Bot')")
+          # Gitの初期設定
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          echo "👤 コmit担当者: $ASSIGNEE_NAME"
+          # 💡 [重要] かんばんのタスクID（env.TASK_ID）を使って新しいブランチを作成
+          # 例: タスクIDが「AI03-101」なら、ブランチ名は「feature/AI03-101」になります
+          git checkout -b feature/${{ env.TASK_ID }}
           
-          # Gitのコミットユーザー名を取得した担当者名に設定
-          git config --global user.name "$ASSIGNEE_NAME"
-          git config --global user.email "claude-bot@yourdomain.local"
-          
-          # 変更をすべてステージング
+          # 生成されたすべてのファイルをステージングしてコミット
           git add .
+          git commit -m "🤖 自動生成: Notionタスク ${{ env.TASK_ID }} の実装コード"
           
-          # 💡 コミットメッセージの文言にも担当者名を含めることができます
-          git commit -m "feat($TASK_ID): Claudeによるコード自動生成（担当: $ASSIGNEE_NAME）"
-          
-          # リモートリポジトリへ強制プッシュ
-          git push -u origin feature/$TASK_ID --force
-          
+          # 💡 [重要] 作成したタスクIDのブランチをリモート（GitHub）へ強制プッシュ
+          git push -u origin feature/${{ env.TASK_ID }} --force
+
       # 9. 【条件分岐】すべての工程が完了したら、Notionのステータスを「Git格納済み」に更新
       - name: Update Notion Status to Git Stored
         if: env.TASK_ID != ''
