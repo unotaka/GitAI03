@@ -29,13 +29,13 @@ jobs:
         with:
           node-version: 20
 
-      # 3. パッケージマネージャー(pnpm)のインストールと依存関係の解決
+      # 3. パッケージマネージャーと Claude Code CLI のグローバルインストール
       - name: Install Dependencies
         run: |
           npm install -g pnpm
           
-          # 💡 Geminiから「Claude」用の公式SDK（@anthropic-ai/sdk）のインストールに変更
-          npm install @anthropic-ai/sdk
+          # 💡 OAuthトークンを使用して動く CLI ツール「Claude Code」をグローバルインストール
+          npm install -g @anthropic-ai/claude-code
           
           # もし既存の package.json がある場合は、他の依存関係も通常通りインストール
           if [ -f "package.json" ]; then
@@ -63,14 +63,14 @@ jobs:
           # 新しい開発用ブランチを作成して切り替え
           git checkout -b feature/$TASK_ID
 
-      # 6. 【条件分岐】Claudeによるソースコード・テストコードの自動生成
+      # 6. 【条件分岐】Claude Codeによるソースコードの自動生成（定額プラン枠を利用）
       - name: Run Claude Coder
         if: env.TASK_ID != ''
         env:
-          # 💡 AnthropicのAPIキーを環境変数として渡します
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # 💡 従量課金のAPIキーではなく、事前に取得した定額枠用のOAuthトークンを渡します
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          # 💡 スクリプト名を claude-coder.js に変更（※実体ファイル名も合わせて変更してください）
+          # 💡 スクリプトを呼び出し、内部で `claude` コマンドを実行させます
           node scripts/claude-coder.js
 
       # 8. 【条件分岐】成果物をプッシュ（Notionの担当者名でコミット）
