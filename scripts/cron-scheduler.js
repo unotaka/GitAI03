@@ -1,22 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 
-// 💡 あらゆるバージョンのNotion SDKのエクスポート構造を100%確実に吸収する防衛ロジック
-const NotionSDK = require("@notionhq/client");
+// 💡 Notion SDK v2以降のCommonJS（require）における最も確実な公式推奨インポート
+// 分割代入による `{ Client }` ではなく、パッケージオブジェクトから直接 .Client を指定します
+const notionClientModule = require("@notionhq/client");
+const Client = notionClientModule.Client;
 
-let ClientClass;
-if (typeof NotionSDK === 'function') {
-  ClientClass = NotionSDK;
-} else if (NotionSDK && typeof NotionSDK.Client === 'function') {
-  ClientClass = NotionSDK.Client;
-} else if (NotionSDK && NotionSDK.default && typeof NotionSDK.default.Client === 'function') {
-  ClientClass = NotionSDK.default.Client;
-} else if (NotionSDK && typeof NotionSDK.default === 'function') {
-  ClientClass = NotionSDK.default;
-}
-
-if (!ClientClass) {
-  console.error("❌ Notion SDKからClientクラスを検出・解決できませんでした。");
+if (!Client) {
+  console.error("❌ Notion SDKからClientクラスを検出できませんでした。");
   process.exit(1);
 }
 
@@ -24,8 +15,8 @@ if (!ClientClass) {
 const NOTION_TOKEN = process.env.NOTION_TOKEN;
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 
-// クライアントの初期化
-const notion = new ClientClass({ auth: NOTION_TOKEN });
+// 💡 確定したClientクラスを用いて、公式仕様通りにインスタンスを生成
+const notion = new Client({ auth: NOTION_TOKEN });
 
 /**
  * NotionのRichText型プロパティから安全にプレーンテキストを抽出するヘルパー関数
@@ -45,15 +36,15 @@ async function main() {
     process.exit(1);
   }
 
-  // 💡 安全確認用ログ: メソッドがオブジェクトに正しく存在するか事前に確認
-  if (typeof notion.databases !== 'object' || typeof notion.databases.query !== 'function') {
-    console.error("❌ エラー: 生成されたインスタンスに 'databases.query' 関数が存在しません。初期化構造に問題があります。");
-    console.log("現在の構造タイプ:", typeof notion.databases);
+  // 💡 最終防衛線: メソッドがオブジェクトに正しく存在するか事前に確認
+  if (!notion.databases || typeof notion.databases.query !== 'function') {
+    console.error("❌ エラー: インスタンスの生成には成功しましたが、'notion.databases.query' が関数として存在しません。");
+    console.log("👉 対処法: `package.json` または GitHub Actions でインストールされている `@notionhq/client` のバージョンが極端に古い、もしくは破損している可能性があります。");
     process.exit(1);
   }
 
   try {
-    // 💡 これで確実にデータベースのポーリングを実行できます
+    // 💡 データベースのポーリングを実行
     const response = await notion.databases.query({
       database_id: DATABASE_ID,
       filter: {
