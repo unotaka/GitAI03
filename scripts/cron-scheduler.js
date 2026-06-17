@@ -1,10 +1,18 @@
 const fs = require('fs');
 const path = require('path');
+// 💡 インポート方法をNotion SDK v2以降の標準形式に修正（Clientを正しく初期化できるようにします）
 const { Client } = require("@notionhq/client");
 
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
+// 環境変数からトークンとデータベースIDを取得
+const NOTION_TOKEN = process.env.NOTION_TOKEN;
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 
+// クライアントを確実に初期化
+const notion = new Client({ auth: NOTION_TOKEN });
+
+/**
+ * NotionのRichText型プロパティから安全にプレーンテキストを抽出するヘルパー関数
+ */
 function getRichTextValue(property) {
   if (property && property.rich_text && property.rich_text.length > 0) {
     return property.rich_text.map(t => t.plain_text).join("").trim();
@@ -15,12 +23,13 @@ function getRichTextValue(property) {
 async function main() {
   console.log("🔍 Notionデータベースのタスク状況をチェック中...");
 
-  if (!process.env.NOTION_TOKEN || !DATABASE_ID) {
+  if (!NOTION_TOKEN || !DATABASE_ID) {
     console.error("❌ エラー: NOTION_TOKEN または NOTION_DATABASE_ID が設定されていません。");
     process.exit(1);
   }
 
   try {
+    // 💡 インスタンスが正しく初期化されていれば、databases.query が正常に動作します
     const response = await notion.databases.query({
       database_id: DATABASE_ID,
       filter: {
