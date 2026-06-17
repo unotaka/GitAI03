@@ -1,22 +1,11 @@
 const fs = require('fs');
 const path = require('path');
 
-// 💡 Notion SDK v2以降のCommonJS（require）における最も確実な公式推奨インポート
-// 分割代入による `{ Client }` ではなく、パッケージオブジェクトから直接 .Client を指定します
-const notionClientModule = require("@notionhq/client");
-const Client = notionClientModule.Client;
+// 💡 エラーの原因となるNotion SDKのインポートを完全に廃止します。
+// 代わりにNode.js標準の fetch API を使用してNotion APIを直接叩きます。
 
-if (!Client) {
-  console.error("❌ Notion SDKからClientクラスを検出できませんでした。");
-  process.exit(1);
-}
-
-// 環境変数からトークンとデータベースIDを取得
 const NOTION_TOKEN = process.env.NOTION_TOKEN;
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
-
-// 💡 確定したClientクラスを用いて、公式仕様通りにインスタンスを生成
-const notion = new Client({ auth: NOTION_TOKEN });
 
 /**
  * NotionのRichText型プロパティから安全にプレーンテキストを抽出するヘルパー関数
@@ -36,25 +25,38 @@ async function main() {
     process.exit(1);
   }
 
-  // 💡 最終防衛線: メソッドがオブジェクトに正しく存在するか事前に確認
-  if (!notion.databases || typeof notion.databases.query !== 'function') {
-    console.error("❌ エラー: インスタンスの生成には成功しましたが、'notion.databases.query' が関数として存在しません。");
-    console.log("👉 対処法: `package.json` または GitHub Actions でインストールされている `@notionhq/client` のバージョンが極端に古い、もしくは破損している可能性があります。");
-    process.exit(1);
-  }
-
   try {
-    // 💡 データベースのポーリングを実行
-    const response = await notion.databases.query({
-      database_id: DATABASE_ID,
-      filter: {
-        property: "ステータス",
-        status: { equals: "Claude生成待ち" }
+    // 💡 Notion API のデータベースクエリ用エンドポイントURL
+    const url = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
+    
+    // 💡 SDKを経由せず、直接HTTP POSTリクエストを送信
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${NOTION_TOKEN}`,
+        'Notion-Version': '2022-06-28', // ワークフローのPATCHステップと統一
+        'Content-Type': 'application/json'
       },
-      page_size: 1
+      body: JSON.stringify({
+        filter: {
+          property: "ステータス",
+          status: { equals: "Claude生成待ち" }
+        },
+        page_size: 1
+      })
     });
 
-    if (response.results.length === 0) {
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ Notion APIリクエストエラー (Status: ${response.status}):`);
+      console.error(errorText);
+      process.exit(1);
+    }
+
+    // レスポンスをJSONとしてパース
+    const data = await response.json();
+
+    if (!data.results || data.results.length === 0) {
       console.log("🎵 『Claude生成待ち』のタスクはありません。終了します。");
       if (process.env.GITHUB_ENV) {
         fs.appendFileSync(process.env.GITHUB_ENV, `TASK_ID=\n`);
@@ -62,7 +64,7 @@ async function main() {
       process.exit(0);
     }
 
-    const page = response.results[0];
+    const page = data.results[0];
     const props = page.properties;
 
     const pageId = page.id;
