@@ -34,10 +34,10 @@ jobs:
         run: |
           npm install -g pnpm
           
-          # 💡 [追記] スクリプトの実行に必要な Notion 公式 SDK をインストールします
+          # スクリプトの実行に必要な Notion 公式 SDK をインストールします
           npm install @notionhq/client
           
-          # 💡 OAuthトークンを使用して動く CLI ツール「Claude Code」をグローバルインストール
+          # OAuthトークンを使用して動く CLI ツール「Claude Code」をグローバルインストール
           npm install -g @anthropic-ai/claude-code
           
           # もし既存の package.json がある場合は、他の依存関係も通常通りインストール
@@ -55,7 +55,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: node scripts/cron-scheduler.js
 
-      # 5. 【条件分岐】タスクがある場合のみ、専用のGitブランチを作成
+      # 5. 【条件分岐】タスクがある場合のみ、専用のGitブランチを作成・切り替え
       - name: Create Feature Branch
         if: env.TASK_ID != ''
         run: |
@@ -63,8 +63,9 @@ jobs:
           git config --global user.name "Claude Developer Bot"
           git config --global user.email "claude-bot@yourdomain.local"
           
-          # 新しい開発用ブランチを作成して切り替え
-          git checkout -b feature/$TASK_ID
+          # 💡【最重要修正】大文字の -B を使うことで、同一タスクIDによる再作成時でも
+          # 既存ブランチをエラーなく「強制的に初期化して最新のmainから作り直す」ように変更します。
+          git checkout -B feature/${{ env.TASK_ID }}
 
       # 6. 【条件分岐】Claude Codeによるソースコードの自動生成（定額プラン枠を利用）
       - name: Run Claude Coder
@@ -73,10 +74,10 @@ jobs:
           # 💡 従量課金のAPIキーではなく、事前に取得した定額枠用のOAuthトークンを渡します
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
-          # 💡 スクリプトを呼び出し、内部で `claude` コマンドを実行させます
+          # スクリプトを呼び出し、内部で `claude` コマンドを実行させます
           node scripts/claude-coder.js
 
-      # 8. 成果物を新しいブランチへプッシュ（既存ブランチは上書き）
+      # 8. 成果物を新しいブランチへプッシュ（既存ブランチは確実に上書き）
       - name: Push Code
         if: env.TASK_ID != ''
         env:
@@ -86,24 +87,19 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 2. 💡【重要】ローカルの既存ブランチを一度強制削除して、新しく作り直す
-          # これにより、前回の古いファイルが残ってしまうのを防ぎ、まっさらな状態にします
-          git branch -D feature/${{ env.TASK_ID }} 2>/dev/null || true
-          git checkout -b feature/${{ env.TASK_ID }}
-          
-          # 3. すべてのファイルをステージングしてコミット
+          # 2. すでにステップ5で正しくチェックアウトしているため、
+          # ここではそのまま現在の状態（変更分）をコミットして強制プッシュします。
           git add .
           git commit -m "🤖 自動生成: Notionタスク ${{ env.TASK_ID }} の実装コード（再作成）"
           
-          # 4. 💡【重要】リモート（GitHub）へ強制プッシュする (--force を付与)
-          # これにより、GitHub上にある既存の同名ブランチが完全に上書きされます
+          # 4. リモート（GitHub）へ強制プッシュする (--force を付与)
           git push -u origin feature/${{ env.TASK_ID }} --force
 
       # 9. 【条件分岐】すべての工程が完了したら、Notionのステータスを「Git格納済み」に更新
       - name: Update Notion Status to Git Stored
         if: env.TASK_ID != ''
         run: |
-          # 💡 JSONファイルから PAGE_ID をノードのワンライナーで安全に抽出
+          # JSONファイルから PAGE_ID をノードのワンライナーで安全に抽出
           PAGE_ID=$(node -e "console.log(require('./task_info.json').PAGE_ID)")
           
           echo "📝 Notionのタスク（ページID: $PAGE_ID）を『Git格納済み』に更新中..."
