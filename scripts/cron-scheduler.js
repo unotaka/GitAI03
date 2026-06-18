@@ -1,254 +1,139 @@
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
-const { Client } = require("@notionhq/client");
 
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
+const NOTION_TOKEN = process.env.NOTION_TOKEN;
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
-const RULE_PAGE_ID = "3814c3b4a17280e18f9dc4ee0ba5019b"; // 「AI03開発ルール」ページID
 
 /**
- * 指定されたディレクトリ配下のファイルを再帰的に探索し、ソースコードを取得する関数
+ * Notionの各種プロパティから安全に文字列を抽出するヘルパー関数
  */
-function getAllExistingSources(dirPath, extensions = ['.java', '.ts', '.js', '.py']) {
-  let results = "";
-  if (!fs.existsSync(dirPath)) return results;
-
-  const items = fs.readdirSync(dirPath);
-  for (const item of items) {
-    const fullPath = path.join(dirPath, item);
-    const stat = fs.statSync(fullPath);
-
-    if (stat.isDirectory()) {
-      if (item !== 'node_modules' && item !== '.git' && item !== 'dist' && item !== 'build') {
-        results += getAllExistingSources(fullPath, extensions);
-      }
-    } else if (stat.isFile()) {
-      const ext = path.extname(fullPath);
-      if (extensions.includes(ext)) {
-        const relativePath = path.relative(path.join(__dirname, '..'), fullPath);
-        const codeBody = fs.readFileSync(fullPath, 'utf8');
-        results += `\n--- 既存ファイル: ${relativePath} ---\n${codeBody}\n`;
-      }
-    }
+function getNotionValue(property) {
+  if (!property) return "";
+  
+  // 1. テキスト型 (rich_text) の場合
+  if (property.rich_text && property.rich_text.length > 0) {
+    return property.rich_text.map(t => t.plain_text).join("").trim();
   }
-  return results;
-}
-
-async function fetchNotionRules(pageId) {
-  try {
-    console.log("📥 Notionから『AI03開発ルール』を取得中...");
-    const response = await notion.blocks.children.list({ block_id: pageId });
-    let rulesText = "";
-    for (const block of response.results) {
-      if (block.type === "paragraph") rulesText += block.paragraph.rich_text.map(t => t.plain_text).join("") + "\n";
-      else if (block.type === "heading_1") rulesText += `\n# ${block.heading_1.rich_text.map(t => t.plain_text).join("")}\n`;
-      else if (block.type === "heading_2") rulesText += `\n## ${block.heading_2.rich_text.map(t => t.plain_text).join("")}\n`;
-      else if (block.type === "heading_3") rulesText += `\n### ${block.heading_3.rich_text.map(t => t.plain_text).join("")}\n`;
-      else if (block.type === "bulleted_list_item") rulesText += `* ${block.bulleted_list_item.rich_text.map(t => t.plain_text).join("")}\n`;
-      else if (block.type === "numbered_list_item") rulesText += `1. ${block.numbered_list_item.rich_text.map(t => t.plain_text).join("")}\n`;
-    }
-    return rulesText.trim();
-  } catch (error) {
-    console.warn("⚠️ 開発ルールの取得に失敗しました。デフォルト進行:", error.message);
-    return "※標準的なクリーンコードに準拠してください。";
+  
+  // 2. 公式の自動採番 ID型 (unique_id) の場合
+  if (property.unique_id) {
+    const prefix = property.unique_id.prefix ? `${property.unique_id.prefix}-` : "";
+    return `${prefix}${property.unique_id.number}`.trim();
   }
+  
+  // 3. タイトル型 (title) の場合
+  if (property.title && property.title.length > 0) {
+    return property.title.map(t => t.plain_text).join("").trim();
+  }
+  
+  return "";
 }
 
 async function main() {
-  const taskInfoPath = path.join(__dirname, '../task_info.json');
-  if (!fs.existsSync(taskInfoPath)) {
-    console.error('❌ エラー: task_info.json が見つかりません。');
+  console.log("🔍 Notionデータベースのタスク状況をチェック中...");
+
+  if (!NOTION_TOKEN || !DATABASE_ID) {
+    console.error("❌ エラー: NOTION_TOKEN または NOTION_DATABASE_ID が設定されていません。");
     process.exit(1);
   }
 
-  const taskInfo = JSON.parse(fs.readFileSync(taskInfoPath, 'utf8'));
-  const { TASK_ID, TITLE, DESCRIPTION, PAGE_ID, CLASS_NAME, PACKAGE_NAME, SCREEN_ITEMS } = taskInfo;
-  
-  const developmentRules = await fetchNotionRules(RULE_PAGE_ID);
-
-  console.log("📂 Gitにコミット済みの既存ソースコードを自動スキャン中...");
-  const projectRoot = path.join(__dirname, '..');
-  const srcDir = path.join(projectRoot, 'src'); 
-  
-  let injectedBaseSources = getAllExistingSources(srcDir, ['.java', '.ts', '.js']);
-  
-  if (!injectedBaseSources) {
-    injectedBaseSources = "（現在リポジトリの対象ディレクトリ内に既存のソースファイルはありません。新規に構造を設計してください）\n";
-  }
-
-  console.log(`🤖 Claude Codeによる詳細な構造化コード生成を開始します...`);
-
-  const promptContent = `
-あなたはシニアソフトウェアエンジニアとして、Notionかんばんから連携された以下の詳細プロパティ情報に基づき、最適な本番コードおよびテストコードを生成してください。
-
-=========================================
-【最優先】AI03開発ルール
-=========================================
-${developmentRules}
-=========================================
-
-=========================================
-📌 【最重要：実装の前提・参考にする既存のソースコード】
-=========================================
-${injectedBaseSources}
-=========================================
-
-■ かんばんプロパティ情報
-- タスクID: ${TASK_ID}
-- 機能・画面名: ${TITLE}
-- パッケージ名: ${PACKAGE_NAME || '未入力'}
-- クラス名: ${CLASS_NAME || '未入力'}
-- 画面項目: 
-${SCREEN_ITEMS || 'なし'}
-- 機能概要・仕様:
-${DESCRIPTION}
-
-【厳格な開発・出力ルール】
-1. 指定されたパッケージ名、クラス名がある場合は完全に準拠してソースコードを作成してください。もし未入力の場合は、仕様から最適な「クラス名」と「パッケージ名」をあなたが決定して作成してください。
-2. 画面項目が定義されている場合、それらの入力項目やボタンアクション、バリデーションロジックを漏れなく実装してください。
-3. コード生成時、もし複数のソースファイルに分割して作成した場合は、後述の「マルチファイル報告タグ」を使用して作成したファイルをシステムに明確に伝えてください。
-4. ファイルは現在のプロジェクトディレクトリ内の適切なパスへ直接書き出して保存してください。
-
-=========================================
-💡 【新規追加：クラス名・パッケージ名の報告ルール】
-=========================================
-今回あなたが実際に作成（決定）した「メインのクラス名」と「パッケージ名」を、必ず以下の形式のタグで囲んで出力してください。
-[METADATA_REPORT_START]
-- class: (作成したメインのクラス名)
-- package: (作成したパッケージ名)
-[METADATA_REPORT_END]
-
-=========================================
-💡 【重要：仕様追加・変更時の書き戻しルール】
-=========================================
-[NOTION_FEEDBACK_START]
-- 追加された画面項目: (具体的に)
-- 変更・追加された仕様: (理由と内容)
-[NOTION_FEEDBACK_END]
-
-=========================================
-💡 【重要：複数ソース生成時のマルチファイル報告ルール】
-=========================================
-[MULTIFILE_REPORT_START]
-- file: (ファイルパス1)
-  summary: (このファイルの役割・クラス概要)
-[MULTIFILE_REPORT_END]
-
-すべてのファイル書き出しを終えたら、処理を終了してください。
-`.trim();
-
-  const tempPromptPath = path.join(__dirname, `../temp_prompt_${TASK_ID}.txt`);
-  fs.writeFileSync(tempPromptPath, promptContent, 'utf8');
-
   try {
-    console.log("🤖 Claude Codeを実行中（オートメーションモード）...");
-    const result = spawnSync("claude", ["--print", fs.readFileSync(tempPromptPath, "utf8")], {
-      encoding: "utf8", stdio: "pipe", env: { ...process.env }
+    const url = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${NOTION_TOKEN}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        filter: {
+          property: "ステータス",
+          status: { equals: "Claude生成待ち" }
+        },
+        page_size: 1
+      })
     });
 
-    if (fs.existsSync(tempPromptPath)) fs.unlinkSync(tempPromptPath);
-    if (result.status !== 0) {
-      console.error("❌ Claude Code CLI エラー:", result.stderr);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ Notion APIリクエストエラー (Status: ${response.status}):`);
+      console.error(errorText);
       process.exit(1);
     }
 
-    const outputText = result.stdout;
-    console.log("\n--- Claude Code 実行ログ ---\n", outputText, "\n-----------------------------\n");
+    const data = await response.json();
 
-    // 🔍 【新規：クラス名・パッケージ名の書き戻し】
-    const metaRegex = /\[METADATA_REPORT_START\]([\s\S]*?)\[METADATA_REPORT_END\]/;
-    const metaMatch = outputText.match(metaRegex);
-    if (metaMatch && metaMatch[1] && PAGE_ID) {
-      console.log("📝 Claudeが作成したクラス名とパッケージ名を検出。Notionを更新します...");
-      const metaLines = metaMatch[1].split('\n');
-      let finalClass = "";
-      let finalPackage = "";
-
-      for (const line of metaLines) {
-        if (line.includes('- class:')) finalClass = line.replace('- class:', '').trim();
-        if (line.includes('- package:')) finalPackage = line.replace('- package:', '').trim();
+    if (!data.results || data.results.length === 0) {
+      console.log("🎵 『Claude生成待ち』のタスクはありません。終了します。");
+      if (process.env.GITHUB_ENV) {
+        fs.appendFileSync(process.env.GITHUB_ENV, `TASK_ID=\n`);
       }
-
-      if (finalClass || finalPackage) {
-        try {
-          const updateProps = {};
-          if (finalClass) {
-            updateProps["クラス名"] = { rich_text: [{ type: "text", text: { content: finalClass } }] };
-          }
-          if (finalPackage) {
-            updateProps["パッケージ名"] = { rich_text: [{ type: "text", text: { content: finalPackage } }] };
-          }
-
-          // NotionのタスクプロパティをPATCH（更新）
-          await notion.pages.update({
-            page_id: PAGE_ID,
-            properties: updateProps
-          });
-          console.log(`✅ Notionのプロパティを更新しました (クラス名: ${finalClass}, パッケージ名: ${finalPackage})`);
-        } catch (err) {
-          console.error("⚠️ Notionプロパティ更新エラー:", err.message);
-        }
-      }
+      process.exit(0);
     }
 
-    // 🔍 1. 仕様追加・変更の書き戻し
-    const feedbackRegex = /\[NOTION_FEEDBACK_START\]([\s\S]*?)\[NOTION_FEEDBACK_END\]/;
-    const feedbackMatch = outputText.match(feedbackRegex);
-    if (feedbackMatch && feedbackMatch[1] && PAGE_ID) {
-      const aiFeedback = feedbackMatch[1].trim();
-      try {
-        await notion.blocks.children.append({
-          block_id: PAGE_ID,
-          children: [
-            { object: "block", type: "heading_3", heading_3: { rich_text: [{ type: "text", text: { content: "🤖 Claude Code が自動追加した画面項目・仕様変更" } }] } },
-            { object: "block", type: "paragraph", paragraph: { rich_text: [{ type: "text", text: { content: aiFeedback } }], color: "blue_background" } }
-          ]
-        });
-        console.log("✅ Notionかんばんのタスク詳細に仕様変更を追記しました。");
-      } catch (err) { console.error("⚠️ Notion追記エラー:", err.message); }
+    const page = data.results[0];
+    const props = page.properties;
+    const pageId = page.id;
+
+    // 各種プロパティの取得
+    const title = getNotionValue(props["名前"]) || "無題のタスク";
+    const taskId = getNotionValue(props["タスクID"]);
+    const className = getNotionValue(props["クラス名"]);
+    const packageName = getNotionValue(props["パッケージ名"]);
+    const featureSummary = getNotionValue(props["機能概要"]);
+    const screenItems = getNotionValue(props["画面項目"]);
+    const detailedSpecs = getNotionValue(props["仕様"]);
+
+    let assigneeName = "Claude Bot";
+    if (props["担当者"] && props["担当者"].people && props["担当者"].people.length > 0) {
+      assigneeName = props["担当者"].people[0].name;
     }
 
-    // 🔍 2. 複数ソースファイル生成時のタスク分解
-    const multiFileRegex = /\[MULTIFILE_REPORT_START\]([\s\S]*?)\[MULTIFILE_REPORT_END\]/;
-    const multiFileMatch = outputText.match(multiFileRegex);
-    if (multiFileMatch && multiFileMatch[1] && DATABASE_ID) {
-      console.log("🗂️ 複数ファイルの生成報告を検知。タスクを分解起票します...");
-      const reportLines = multiFileMatch[1].split('\n');
-      let currentFile = ""; let currentSummary = "";
+    const inputCheckStatus = props["入力チェック"] && props["入力チェック"].checkbox
+      ? (props["入力チェック"].checkbox ? "✅ OK" : "❌ 未着手")
+      : "未定義";
 
-      for (const line of reportLines) {
-        if (line.includes('- file:')) {
-          if (currentFile) await createSubTaskInNotion(DATABASE_ID, TASK_ID, TITLE, currentFile, currentSummary);
-          currentFile = line.replace('- file:', '').trim(); currentSummary = "";
-        } else if (line.includes('summary:')) {
-          currentSummary = line.replace('summary:', '').trim();
-        } else if (line.trim() && !line.includes('START') && !line.includes('END')) {
-          currentSummary += " " + line.trim();
-        }
-      }
-      if (currentFile) await createSubTaskInNotion(DATABASE_ID, TASK_ID, TITLE, currentFile, currentSummary);
+    const fullDescription = `
+【機能概要】
+${featureSummary || "特になし"}
+
+【仕様詳細】
+${detailedSpecs || "特になし"}
+
+【事前入力チェック状況】
+${inputCheckStatus}
+`.trim();
+
+    // taskId が取得できている場合はそれを最優先で使用
+    const finalTaskId = taskId || `NOTION-${pageId.substring(0, 8)}`;
+
+    const taskInfo = {
+      TASK_ID: finalTaskId,
+      PAGE_ID: pageId,
+      TITLE: title,
+      CLASS_NAME: className,
+      PACKAGE_NAME: packageName,
+      SCREEN_ITEMS: screenItems,
+      DESCRIPTION: fullDescription,
+      ASSIGNEE: assigneeName
+    };
+
+    const outputPath = path.join(__dirname, '../task_info.json');
+    fs.writeFileSync(outputPath, JSON.stringify(taskInfo, null, 2), 'utf8');
+    console.log(`✅ task_info.json の作成に成功しました。確定した TASK_ID: ${finalTaskId}`);
+
+    if (process.env.GITHUB_ENV) {
+      fs.appendFileSync(process.env.GITHUB_ENV, `TASK_ID=${finalTaskId}\n`);
+      console.log(`🚀 GitHub Actions環境変数に TASK_ID=${finalTaskId} を設定。`);
     }
-    console.log('✅ すべての複合自動化プロセスが正常に完了しました！');
-  } catch (error) { console.error('❌ 例外エラー:', error); process.exit(1); }
+
+  } catch (error) {
+    console.error("❌ Notionデータベースのポーリング中に例外エラーが発生しました:");
+    console.error(error);
+    process.exit(1);
+  }
 }
 
-async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, filePath, summary) {
-  try {
-    const fileName = path.basename(filePath);
-    const ext = path.extname(filePath);
-    const classNameCandidate = fileName.replace(ext, '');
-    await notion.pages.create({
-      parent: { database_id: dbId },
-      properties: {
-        "名前": { title: [{ type: "text", text: { content: `ソース個別配備: ${fileName} (${parentTitle})` } }] },
-        "ステータス": { status: { name: "作成完了" } },
-        "タスクID": { rich_text: [{ type: "text", text: { content: `${parentTaskId}-${classNameCandidate.toUpperCase()}` } }] },
-        "クラス名": { rich_text: [{ type: "text", text: { content: classNameCandidate } }] },
-        "機能概要": { rich_text: [{ type: "text", text: { content: `親タスク ${parentTaskId} から分割生成されたファイル。\n役割: ${summary}` } }] }
-      }
-    });
-    console.log(`  └ 新規起票成功: ${fileName}`);
-  } catch (err) { console.error(`  └ ⚠️ 新規起票失敗 (${filePath}):`, err.message); }
-}
 main();

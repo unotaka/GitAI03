@@ -8,7 +8,7 @@ const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 const RULE_PAGE_ID = "3814c3b4a17280e18f9dc4ee0ba5019b"; // 「AI03開発ルール」ページID
 
 /**
- * 💡 指定されたディレクトリ配下のファイルを再帰的に探索し、ソースコードを取得する関数
+ * 指定されたディレクトリ配下のファイルを再帰的に探索し、ソースコードを取得する関数
  */
 function getAllExistingSources(dirPath, extensions = ['.java', '.ts', '.js', '.py']) {
   let results = "";
@@ -36,6 +36,9 @@ function getAllExistingSources(dirPath, extensions = ['.java', '.ts', '.js', '.p
   return results;
 }
 
+/**
+ * Notionの開発ルールページからテキストブロックを抽出する関数
+ */
 async function fetchNotionRules(pageId) {
   try {
     console.log("📥 Notionから『AI03開発ルール』を取得中...");
@@ -68,12 +71,10 @@ async function main() {
   
   const developmentRules = await fetchNotionRules(RULE_PAGE_ID);
 
-  // 💡 【自動前提定義】リポジトリ内の既存ソース（srcディレクトリ配下など）を自動で一括走査
   console.log("📂 Gitにコミット済みの既存ソースコードを自動スキャン中...");
   const projectRoot = path.join(__dirname, '..');
-  const srcDir = path.join(projectRoot, 'src'); // 💡 対象のソースコード配置ディレクトリに合わせて変更してください
+  const srcDir = path.join(projectRoot, 'src'); 
   
-  // Java, TypeScript, JavaScriptなどの主要拡張子を対象に一括読込
   let injectedBaseSources = getAllExistingSources(srcDir, ['.java', '.ts', '.js']);
   
   if (!injectedBaseSources) {
@@ -94,9 +95,6 @@ ${developmentRules}
 =========================================
 📌 【最重要：実装の前提・参考にする既存のソースコード】
 =========================================
-リポジトリ内に既に存在する以下のコミット済みコード群の内容、共通設計、共通DTO、ユーティリティ、関数定義、既存のインポート関係を【完全に踏まえた上で】新しいソースコードを実装してください。
-既存コードの設計思想と高い親和性を持たせ、重複実装を避けることを厳守してください。
-
 ${injectedBaseSources}
 =========================================
 
@@ -111,15 +109,23 @@ ${SCREEN_ITEMS || 'なし'}
 ${DESCRIPTION}
 
 【厳格な開発・出力ルール】
-1. 指定されたパッケージ名、クラス名に完全に準拠してソースコードを作成してください。
+1. 指定されたパッケージ名、クラス名がある場合は完全に準拠してソースコードを作成してください。もし未入力の場合は、仕様から最適な「クラス名」と「パッケージ名」をあなたが決定して作成してください。
 2. 画面項目が定義されている場合、それらの入力項目やボタンアクション、バリデーションロジックを漏れなく実装してください。
 3. コード生成時、もし複数のソースファイルに分割して作成した場合は、後述の「マルチファイル報告タグ」を使用して作成したファイルをシステムに明確に伝えてください。
 4. ファイルは現在のプロジェクトディレクトリ内の適切なパスへ直接書き出して保存してください。
 
 =========================================
+💡 【新規追加：クラス名・パッケージ名の報告ルール】
+=========================================
+今回あなたが実際に作成（決定）した「メインのクラス名」と「パッケージ名」を、必ず以下の形式のタグで囲んで出力してください。
+[METADATA_REPORT_START]
+- class: (作成したメインのクラス名)
+- package: (作成したパッケージ名)
+[METADATA_REPORT_END]
+
+=========================================
 💡 【重要：仕様追加・変更時の書き戻しルール】
 =========================================
-開発中に仕様の不足、新しい画面項目の追加、実装上定義した特別ルールや考慮事項がある場合は、以下のタグで囲んで出力してください。
 [NOTION_FEEDBACK_START]
 - 追加された画面項目: (具体的に)
 - 変更・追加された仕様: (理由と内容)
@@ -128,11 +134,8 @@ ${DESCRIPTION}
 =========================================
 💡 【重要：複数ソース生成時のマルチファイル報告ルール】
 =========================================
-もし複数のファイルを生成した場合は、作成した全ファイルのパスと概要を以下のタグで囲んで出力してください。
 [MULTIFILE_REPORT_START]
 - file: (ファイルパス1)
-  summary: (このファイルの役割・クラス概要)
-- file: (ファイルパス2)
   summary: (このファイルの役割・クラス概要)
 [MULTIFILE_REPORT_END]
 
@@ -156,6 +159,42 @@ ${DESCRIPTION}
 
     const outputText = result.stdout;
     console.log("\n--- Claude Code 実行ログ ---\n", outputText, "\n-----------------------------\n");
+
+    // 🔍 【クラス名・パッケージ名の書き戻しロジック】
+    const metaRegex = /\[METADATA_REPORT_START\]([\s\S]*?)\[METADATA_REPORT_END\]/;
+    const metaMatch = outputText.match(metaRegex);
+    if (metaMatch && metaMatch[1] && PAGE_ID) {
+      console.log("📝 Claudeが作成したクラス名とパッケージ名を検出。Notionを更新します...");
+      const metaLines = metaMatch[1].split('\n');
+      let finalClass = "";
+      let finalPackage = "";
+
+      for (const line of metaLines) {
+        if (line.includes('- class:')) finalClass = line.replace('- class:', '').trim();
+        if (line.includes('- package:')) finalPackage = line.replace('- package:', '').trim();
+      }
+
+      if (finalClass || finalPackage) {
+        try {
+          const updateProps = {};
+          if (finalClass) {
+            updateProps["クラス名"] = { rich_text: [{ type: "text", text: { content: finalClass } }] };
+          }
+          if (finalPackage) {
+            updateProps["パッケージ名"] = { rich_text: [{ type: "text", text: { content: finalPackage } }] };
+          }
+
+          // Notionのタスクプロパティを更新（PATCH）
+          await notion.pages.update({
+            page_id: PAGE_ID,
+            properties: updateProps
+          });
+          console.log(`✅ Notionのプロパティを更新しました (クラス名: ${finalClass}, パッケージ名: ${finalPackage})`);
+        } catch (err) {
+          console.error("⚠️ Notionプロパティ更新エラー:", err.message);
+        }
+      }
+    }
 
     // 🔍 1. 仕様追加・変更の書き戻し
     const feedbackRegex = /\[NOTION_FEEDBACK_START\]([\s\S]*?)\[NOTION_FEEDBACK_END\]/;
@@ -216,4 +255,5 @@ async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, filePath, 
     console.log(`  └ 新規起票成功: ${fileName}`);
   } catch (err) { console.error(`  └ ⚠️ 新規起票失敗 (${filePath}):`, err.message); }
 }
+
 main();
