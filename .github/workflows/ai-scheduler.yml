@@ -76,25 +76,27 @@ jobs:
           # 💡 スクリプトを呼び出し、内部で `claude` コマンドを実行させます
           node scripts/claude-coder.js
 
-      # 8. 【確認・修正】成果物を新しいブランチへプッシュ
+      # 8. 成果物を新しいブランチへプッシュ（既存ブランチは上書き）
       - name: Push Code
         if: env.TASK_ID != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Gitの初期設定
+          # 1. Gitのユーザー設定
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 💡 [重要] かんばんのタスクID（env.TASK_ID）を使って新しいブランチを作成
-          # 例: タスクIDが「AI03-101」なら、ブランチ名は「feature/AI03-101」になります
+          # 2. 💡【重要】ローカルの既存ブランチを一度強制削除して、新しく作り直す
+          # これにより、前回の古いファイルが残ってしまうのを防ぎ、まっさらな状態にします
+          git branch -D feature/${{ env.TASK_ID }} 2>/dev/null || true
           git checkout -b feature/${{ env.TASK_ID }}
           
-          # 生成されたすべてのファイルをステージングしてコミット
+          # 3. すべてのファイルをステージングしてコミット
           git add .
-          git commit -m "🤖 自動生成: Notionタスク ${{ env.TASK_ID }} の実装コード"
+          git commit -m "🤖 自動生成: Notionタスク ${{ env.TASK_ID }} の実装コード（再作成）"
           
-          # 💡 [重要] 作成したタスクIDのブランチをリモート（GitHub）へ強制プッシュ
+          # 4. 💡【重要】リモート（GitHub）へ強制プッシュする (--force を付与)
+          # これにより、GitHub上にある既存の同名ブランチが完全に上書きされます
           git push -u origin feature/${{ env.TASK_ID }} --force
 
       # 9. 【条件分岐】すべての工程が完了したら、Notionのステータスを「Git格納済み」に更新
