@@ -1,19 +1,31 @@
 const fs = require('fs');
 const path = require('path');
 
-// 💡 エラーの原因となるNotion SDKのインポートを完全に廃止します。
-// 代わりにNode.js標準の fetch API を使用してNotion APIを直接叩きます。
-
 const NOTION_TOKEN = process.env.NOTION_TOKEN;
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 
 /**
- * NotionのRichText型プロパティから安全にプレーンテキストを抽出するヘルパー関数
+ * Notionの各種プロパティから安全に文字列を抽出するヘルパー関数
  */
-function getRichTextValue(property) {
-  if (property && property.rich_text && property.rich_text.length > 0) {
+function getNotionValue(property) {
+  if (!property) return "";
+  
+  // 1. テキスト型 (rich_text) の場合
+  if (property.rich_text && property.rich_text.length > 0) {
     return property.rich_text.map(t => t.plain_text).join("").trim();
   }
+  
+  // 2. 公式の自動採番 ID型 (unique_id) の場合
+  if (property.unique_id) {
+    const prefix = property.unique_id.prefix ? `${property.unique_id.prefix}-` : "";
+    return `${prefix}${property.unique_id.number}`.trim();
+  }
+  
+  // 3. タイトル型 (title) の場合
+  if (property.title && property.title.length > 0) {
+    return property.title.map(t => t.plain_text).join("").trim();
+  }
+  
   return "";
 }
 
@@ -26,15 +38,13 @@ async function main() {
   }
 
   try {
-    // 💡 Notion API のデータベースクエリ用エンドポイントURL
     const url = `https://api.notion.com/v1/databases/${DATABASE_ID}/query`;
     
-    // 💡 SDKを経由せず、直接HTTP POSTリクエストを送信
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${NOTION_TOKEN}`,
-        'Notion-Version': '2022-06-28', // ワークフローのPATCHステップと統一
+        'Notion-Version': '2022-06-28',
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
@@ -53,7 +63,6 @@ async function main() {
       process.exit(1);
     }
 
-    // レスポンスをJSONとしてパース
     const data = await response.json();
 
     if (!data.results || data.results.length === 0) {
@@ -66,18 +75,16 @@ async function main() {
 
     const page = data.results[0];
     const props = page.properties;
-
     const pageId = page.id;
-    const title = props["名前"] && props["名前"].title && props["名前"].title.length > 0
-      ? props["名前"].title.map(t => t.plain_text).join("")
-      : "無題のタスク";
 
-    const taskId = getRichTextValue(props["タスクID"]);
-    const className = getRichTextValue(props["クラス名"]);
-    const packageName = getRichTextValue(props["パッケージ名"]);
-    const featureSummary = getRichTextValue(props["機能概要"]);
-    const screenItems = getRichTextValue(props["画面項目"]);
-    const detailedSpecs = getRichTextValue(props["仕様"]);
+    // 各種プロパティの取得（改良版ヘルパーを使用）
+    const title = getNotionValue(props["名前"]) || "無題のタスク";
+    const taskId = getNotionValue(props["タスクID"]);
+    const className = getNotionValue(props["クラス名"]);
+    const packageName = getNotionValue(props["パッケージ名"]);
+    const featureSummary = getNotionValue(props["機能概要"]);
+    const screenItems = getNotionValue(props["画面項目"]);
+    const detailedSpecs = getNotionValue(props["仕様"]);
 
     let assigneeName = "Claude Bot";
     if (props["担当者"] && props["担当者"].people && props["担当者"].people.length > 0) {
@@ -99,8 +106,11 @@ ${detailedSpecs || "特になし"}
 ${inputCheckStatus}
 `.trim();
 
+    // 💡 taskId が取得できている場合はそれを最優先で使用します
+    const finalTaskId = taskId || `NOTION-${pageId.substring(0, 8)}`;
+
     const taskInfo = {
-      TASK_ID: taskId || `NOTION-${pageId.substring(0, 8)}`,
+      TASK_ID: finalTaskId,
       PAGE_ID: pageId,
       TITLE: title,
       CLASS_NAME: className,
@@ -112,11 +122,11 @@ ${inputCheckStatus}
 
     const outputPath = path.join(__dirname, '../task_info.json');
     fs.writeFileSync(outputPath, JSON.stringify(taskInfo, null, 2), 'utf8');
-    console.log(`✅ task_info.json の作成に成功しました。`);
+    console.log(`✅ task_info.json の作成に成功しました。確定した TASK_ID: ${finalTaskId}`);
 
     if (process.env.GITHUB_ENV) {
-      fs.appendFileSync(process.env.GITHUB_ENV, `TASK_ID=${taskInfo.TASK_ID}\n`);
-      console.log(`🚀 GitHub Actions環境変数に TASK_ID=${taskInfo.TASK_ID} を設定。`);
+      fs.appendFileSync(process.env.GITHUB_ENV, `TASK_ID=${finalTaskId}\n`);
+      console.log(`🚀 GitHub Actions環境変数に TASK_ID=${finalTaskId} を設定。`);
     }
 
   } catch (error) {
