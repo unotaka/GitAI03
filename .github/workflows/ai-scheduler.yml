@@ -71,6 +71,9 @@ jobs:
         env:
           # 💡 従量課金のAPIキーではなく、事前に取得した定額枠用のOAuthトークンを渡します
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           # スクリプトを呼び出し、内部で `claude` コマンドを実行させます
           node scripts/claude-coder.js
