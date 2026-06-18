@@ -160,34 +160,47 @@ ${DESCRIPTION}
     const outputText = result.stdout;
     console.log("\n--- Claude Code 実行ログ ---\n", outputText, "\n-----------------------------\n");
 
-    // 🔍 【クラス名・パッケージ名の書き戻しロジック（表記ブレ対応・強化版）】
-    const metaRegex = /(?:\[?METADATA_REPORT_START\]?)([\s\S]*?)(?:\[?METADATA_REPORT_END\]?)/i;
-    const metaMatch = outputText.match(metaRegex);
-    
-    if (metaMatch && metaMatch[1] && PAGE_ID) {
+    // 🔍 【クラス名・パッケージ名の書き戻しロジック（極限強化版）】
+    const startRegex = /METADATA_REPORT_START/i;
+    const endRegex = /METADATA_REPORT_END/i;
+
+    const startIndex = outputText.search(startRegex);
+    const endIndex = outputText.search(endRegex);
+
+    if (startIndex !== -1 && endIndex !== -1 && startIndex < endIndex && PAGE_ID) {
       console.log("📝 Claudeが作成したクラス名とパッケージ名を検出。Notionを更新します...");
-      const metaLines = metaMatch[1].split('\n');
+      
+      const metaContent = outputText.substring(startIndex + "METADATA_REPORT_START".length, endIndex);
+      const metaLines = metaContent.split('\n');
+      
       let finalClass = "";
       let finalPackage = "";
 
       for (const line of metaLines) {
-        // 行頭の記号（-, *, 空白）を綺麗に除去
-        const cleanLine = line.replace(/^[-*\s]+/, '').trim();
+        const cleanLine = line.replace(/^[-*\s[\]]+/, '').trim();
         
-        // 「class:」で始まる行を大文字小文字無視で抽出
-        if (cleanLine.toLowerCase().startsWith('class:')) {
-          finalClass = cleanLine.replace(/class:/i, '').trim();
+        if (cleanLine.toLowerCase().startsWith('class')) {
+          finalClass = cleanLine.replace(/^class\s*:\s*/i, '').trim();
         }
-        // 「package:」で始まる行を大文字小文字無視で抽出
-        if (cleanLine.toLowerCase().startsWith('package:')) {
-          finalPackage = cleanLine.replace(/package:/i, '').trim();
+        if (cleanLine.toLowerCase().startsWith('package')) {
+          finalPackage = cleanLine.replace(/^package\s*:\s*/i, '').trim();
         }
       }
 
-      // 💡 日本語の補足説明（「デフォルトパッケージ」やカッコなど）が入っている場合は掃除する
-      if (finalPackage.includes('なし') || finalPackage.includes('デフォルト') || /[ぁ-んァ-ヶ一-龠]/.test(finalPackage)) {
-        console.log(`  └ ⚠️ パッケージ名に日本語の説明が含まれているため、空欄(なし)として扱います: "${finalPackage}"`);
-        finalPackage = ""; 
+      // 💡 パッケージ名に日本語の解説が混ざっている場合、その中から英数字とドットで構成された純粋なパッケージ名（例: com.example）だけを自動抽出する
+      if (/[ぁ-んァ-ヶ一-龠]/.test(finalPackage)) {
+        console.log(`  └ ⚠️ パッケージ名に日本語が含まれているため、純粋な識別子の抽出を試みます: "${finalPackage}"`);
+        
+        const packageExtractRegex = /[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+/;
+        const match = finalPackage.match(packageExtractRegex);
+        
+        if (match) {
+          finalPackage = match[0];
+          console.log(`    └ 🎯 抽出成功: "${finalPackage}"`);
+        } else {
+          console.log(`    └ ❌ 識別子が見つからないため、空欄として扱います。`);
+          finalPackage = "";
+        }
       }
 
       console.log(`  └ 💡 抽出結果 -> クラス名: "${finalClass}", パッケージ名: "${finalPackage}"`);
@@ -198,12 +211,7 @@ ${DESCRIPTION}
           if (finalClass) {
             updateProps["クラス名"] = { rich_text: [{ type: "text", text: { content: finalClass } }] };
           }
-          // パッケージ名が空でなければ設定、空ならプロパティを空文字で上書き、またはスキップ
-          if (finalPackage) {
-            updateProps["パッケージ名"] = { rich_text: [{ type: "text", text: { content: finalPackage } }] };
-          } else {
-            updateProps["パッケージ名"] = { rich_text: [{ type: "text", text: { content: "" } }] };
-          }
+          updateProps["パッケージ名"] = { rich_text: [{ type: "text", text: { content: finalPackage } }] };
 
           await notion.pages.update({
             page_id: PAGE_ID,
@@ -214,10 +222,10 @@ ${DESCRIPTION}
           console.error("⚠️ Notionプロパティ更新エラー:", err.message);
         }
       } else {
-        console.warn("⚠️ メタデータタグは見つかりましたが、中身からclassやpackageの文字を抽出できませんでした。");
+        console.warn("⚠️ メタデータタグは見つかりましたが、中身からclassやpackageの値を特定できませんでした。");
       }
     } else {
-      console.warn("⚠️ ログ内に [METADATA_REPORT_START] タグが検出されませんでした。");
+      console.warn("⚠️ ログ内に METADATA_REPORT_START または END タグが正しく検出されませんでした。");
     }
 
     // 🔍 1. 仕様追加・変更の書き戻し
