@@ -160,9 +160,10 @@ ${DESCRIPTION}
     const outputText = result.stdout;
     console.log("\n--- Claude Code 実行ログ ---\n", outputText, "\n-----------------------------\n");
 
-    // 🔍 【クラス名・パッケージ名の書き戻しロジック】
-    const metaRegex = /\[METADATA_REPORT_START\]([\s\S]*?)\[METADATA_REPORT_END\]/;
+    // 🔍 【クラス名・パッケージ名の書き戻しロジック（表記ブレ対応・強化版）】
+    const metaRegex = /(?:\[?METADATA_REPORT_START\]?)([\s\S]*?)(?:\[?METADATA_REPORT_END\]?)/i;
     const metaMatch = outputText.match(metaRegex);
+    
     if (metaMatch && metaMatch[1] && PAGE_ID) {
       console.log("📝 Claudeが作成したクラス名とパッケージ名を検出。Notionを更新します...");
       const metaLines = metaMatch[1].split('\n');
@@ -170,9 +171,20 @@ ${DESCRIPTION}
       let finalPackage = "";
 
       for (const line of metaLines) {
-        if (line.includes('- class:')) finalClass = line.replace('- class:', '').trim();
-        if (line.includes('- package:')) finalPackage = line.replace('- package:', '').trim();
+        // 行頭の記号（-, *, 空白）を綺麗に除去
+        const cleanLine = line.replace(/^[-*\s]+/, '').trim();
+        
+        // 「class:」で始まる行を大文字小文字無視で抽出
+        if (cleanLine.toLowerCase().startsWith('class:')) {
+          finalClass = cleanLine.replace(/class:/i, '').trim();
+        }
+        // 「package:」で始まる行を大文字小文字無視で抽出
+        if (cleanLine.toLowerCase().startsWith('package:')) {
+          finalPackage = cleanLine.replace(/package:/i, '').trim();
+        }
       }
+
+      console.log(`  └ 抽出結果 -> クラス名: "${finalClass}", パッケージ名: "${finalPackage}"`);
 
       if (finalClass || finalPackage) {
         try {
@@ -184,7 +196,6 @@ ${DESCRIPTION}
             updateProps["パッケージ名"] = { rich_text: [{ type: "text", text: { content: finalPackage } }] };
           }
 
-          // Notionのタスクプロパティを更新（PATCH）
           await notion.pages.update({
             page_id: PAGE_ID,
             properties: updateProps
@@ -193,7 +204,11 @@ ${DESCRIPTION}
         } catch (err) {
           console.error("⚠️ Notionプロパティ更新エラー:", err.message);
         }
+      } else {
+        console.warn("⚠️ メタデータタグは見つかりましたが、中身からclassやpackageの文字を抽出できませんでした。");
       }
+    } else {
+      console.warn("⚠️ ログ内に [METADATA_REPORT_START] タグが検出されませんでした。");
     }
 
     // 🔍 1. 仕様追加・変更の書き戻し
