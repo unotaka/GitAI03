@@ -1,3 +1,6 @@
+/**
+ * claude-coder.js
+ */
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
@@ -115,12 +118,14 @@ ${DESCRIPTION}
 4. ファイルは現在のプロジェクトディレクトリ内の適切なパスへ直接書き出して保存してください。
 
 =========================================
-💡 【新規追加：クラス名・パッケージ名の報告ルール】
+🚨 【最優先・絶対遵守】クラス名・パッケージ名の報告ルール
 =========================================
-今回あなたが実際に作成（決定）した「メインのクラス名」と「パッケージ名」を、必ず以下の形式のタグで囲んで出力してください。
+あなたはすべての処理（ファイル作成・修正）を完了したあと、回答の「一番最後」に、今回実際に作成・決定した「メインのクラス名」と「パッケージ名」を【必ず】【一言一句違わず】以下のタグ形式で出力しなければなりません。
+このタグが出力に含まれていない場合、システムが正常に動作しません。解説や補足はタグの外側に書き、タグの中身は指定の形式のみとしてください。
+
 [METADATA_REPORT_START]
 - class: (作成したメインのクラス名)
-- package: (作成したパッケージ名)
+- package: (作成したパッケージ名。もしデフォルトパッケージの場合は com.example などの適切な識別子を補うか、無ければ空欄にしてください。余計な日本語の解説文は絶対に混ぜないでください)
 [METADATA_REPORT_END]
 
 =========================================
@@ -139,7 +144,7 @@ ${DESCRIPTION}
   summary: (このファイルの役割・クラス概要)
 [MULTIFILE_REPORT_END]
 
-すべてのファイル書き出しを終えたら、処理を終了してください。
+重ねて警告します。回答の末尾には必ず \`METADATA_REPORT_START\` と \`METADATA_REPORT_END\` のタグを正確に出力してください。
 `.trim();
 
   const tempPromptPath = path.join(__dirname, `../temp_prompt_${TASK_ID}.txt`);
@@ -160,17 +165,14 @@ ${DESCRIPTION}
     const outputText = result.stdout;
     console.log("\n--- Claude Code 実行ログ ---\n", outputText, "\n-----------------------------\n");
 
-    // 🔍 【クラス名・パッケージ名の書き戻しロジック（極限強化版）】
-    const startRegex = /METADATA_REPORT_START/i;
-    const endRegex = /METADATA_REPORT_END/i;
+    // 🔍 【クラス名・パッケージ名の書き戻しロジック（完全に安全なmatch方式へ統一）】
+    const metadataRegex = /\[METADATA_REPORT_START\]([\s\S]*?)\[METADATA_REPORT_END\]/i;
+    const metadataMatch = outputText.match(metadataRegex);
 
-    const startIndex = outputText.search(startRegex);
-    const endIndex = outputText.search(endRegex);
-
-    if (startIndex !== -1 && endIndex !== -1 && startIndex < endIndex && PAGE_ID) {
+    if (metadataMatch && metadataMatch[1] && PAGE_ID) {
       console.log("📝 Claudeが作成したクラス名とパッケージ名を検出。Notionを更新します...");
       
-      const metaContent = outputText.substring(startIndex + "METADATA_REPORT_START".length, endIndex);
+      const metaContent = metadataMatch[1]; // タグの「中身だけ」を確実に取得（インデックスの計算ズレなし）
       const metaLines = metaContent.split('\n');
       
       let finalClass = "";
@@ -187,6 +189,20 @@ ${DESCRIPTION}
         }
       }
 
+      // 💡 日本語の有無に関わらず、Claudeが真似して出力しがちなカッコ「()」や「[]」を綺麗に除去する
+      finalClass = finalClass.replace(/[()\[\]]/g, '').trim();
+      finalPackage = finalPackage.replace(/[()\[\]]/g, '').trim();
+
+      // 💡 クラス名に日本語やカッコの説明が混ざっている場合、最初の英数字の塊だけを抽出する
+      if (/[ぁ-んァ-ヶ一-龠]/.test(finalClass)) {
+        console.log(`  └ ⚠️ クラス名に日本語が含まれているため、純粋なクラス名の抽出を試みます: "${finalClass}"`);
+        const classMatch = finalClass.match(/[a-zA-Z0-9_]+/);
+        if (classMatch) {
+          finalClass = classMatch[0];
+          console.log(`    └ 🎯 クラス名抽出成功: "${finalClass}"`);
+        }
+      }
+
       // 💡 パッケージ名に日本語の解説が混ざっている場合、その中から英数字とドットで構成された純粋なパッケージ名（例: com.example）だけを自動抽出する
       if (/[ぁ-んァ-ヶ一-龠]/.test(finalPackage)) {
         console.log(`  └ ⚠️ パッケージ名に日本語が含まれているため、純粋な識別子の抽出を試みます: "${finalPackage}"`);
@@ -196,7 +212,7 @@ ${DESCRIPTION}
         
         if (match) {
           finalPackage = match[0];
-          console.log(`    └ 🎯 抽出成功: "${finalPackage}"`);
+          console.log(`    └ 🎯 パッケージ名抽出成功: "${finalPackage}"`);
         } else {
           console.log(`    └ ❌ 識別子が見つからないため、空欄として扱います。`);
           finalPackage = "";
