@@ -184,7 +184,13 @@ ${DESCRIPTION}
         }
       }
 
-      console.log(`  └ 抽出結果 -> クラス名: "${finalClass}", パッケージ名: "${finalPackage}"`);
+      // 💡 日本語の補足説明（「デフォルトパッケージ」やカッコなど）が入っている場合は掃除する
+      if (finalPackage.includes('なし') || finalPackage.includes('デフォルト') || /[ぁ-んァ-ヶ一-龠]/.test(finalPackage)) {
+        console.log(`  └ ⚠️ パッケージ名に日本語の説明が含まれているため、空欄(なし)として扱います: "${finalPackage}"`);
+        finalPackage = ""; 
+      }
+
+      console.log(`  └ 💡 抽出結果 -> クラス名: "${finalClass}", パッケージ名: "${finalPackage}"`);
 
       if (finalClass || finalPackage) {
         try {
@@ -192,8 +198,11 @@ ${DESCRIPTION}
           if (finalClass) {
             updateProps["クラス名"] = { rich_text: [{ type: "text", text: { content: finalClass } }] };
           }
+          // パッケージ名が空でなければ設定、空ならプロパティを空文字で上書き、またはスキップ
           if (finalPackage) {
             updateProps["パッケージ名"] = { rich_text: [{ type: "text", text: { content: finalPackage } }] };
+          } else {
+            updateProps["パッケージ名"] = { rich_text: [{ type: "text", text: { content: "" } }] };
           }
 
           await notion.pages.update({
