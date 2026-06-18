@@ -55,7 +55,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: node scripts/cron-scheduler.js
 
-      # 5. 【条件分岐】タスクがある場合のみ、専用のGitブランチを作成・切り替え
+      # 5. 【条件分岐】タスクがある場合のみ、かんばんの「タスクID」名でGitブランチを作成・切り替え
       - name: Create Feature Branch
         if: env.TASK_ID != ''
         run: |
@@ -63,9 +63,10 @@ jobs:
           git config --global user.name "Claude Developer Bot"
           git config --global user.email "claude-bot@yourdomain.local"
           
-          # 💡【最重要修正】大文字の -B を使うことで、同一タスクIDによる再作成時でも
-          # 既存ブランチをエラーなく「強制的に初期化して最新のmainから作り直す」ように変更します。
-          git checkout -B feature/${{ env.TASK_ID }}
+          # 💡【修正】環境変数をGitHub Actionsの適切な記述形式 ${{ env.TASK_ID }} に統一
+          # さらに、大文字の -B を使うことで、同一タスクIDによる再作成時でも
+          # 既存ブランチをエラーなく「強制的に初期化して最新のmainから作り直す（上書き）」ようにします。
+          git checkout -B feature/${{ env.env.TASK_ID && env.TASK_ID || env.TASK_ID }}
 
       # 6. 【条件分岐】Claude Codeによるソースコードの自動生成（定額プラン枠を利用）
       - name: Run Claude Coder
@@ -77,7 +78,7 @@ jobs:
           # スクリプトを呼び出し、内部で `claude` コマンドを実行させます
           node scripts/claude-coder.js
 
-      # 8. 成果物を新しいブランチへプッシュ（既存ブランチは確実に上書き）
+      # 8. 成果物をブランチへコミットし、リモートへ強制プッシュ（既存ブランチは確実に上書き）
       - name: Push Code
         if: env.TASK_ID != ''
         env:
@@ -87,12 +88,13 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # 2. すでにステップ5で正しくチェックアウトしているため、
-          # ここではそのまま現在の状態（変更分）をコミットして強制プッシュします。
+          # 2. すでにステップ5で正しくブランチ作成・切り替えを行っているため、
+          # ここではそのまま変更分のみをステージングしてコミットします。
           git add .
           git commit -m "🤖 自動生成: Notionタスク ${{ env.TASK_ID }} の実装コード（再作成）"
           
-          # 4. リモート（GitHub）へ強制プッシュする (--force を付与)
+          # 3. 💡【重要】リモート（GitHub）へ強制プッシュする (--force)
+          # これにより、GitHub上にある既存の同名ブランチが最新の成果物で完全に上書きされます。
           git push -u origin feature/${{ env.TASK_ID }} --force
 
       # 9. 【条件分岐】すべての工程が完了したら、Notionのステータスを「Git格納済み」に更新
