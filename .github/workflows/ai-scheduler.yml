@@ -81,7 +81,7 @@ jobs:
 
       # 8. 成果物をブランチへコミットし、リモートへ強制プッシュ
       - name: Push Code
-        if: env.TASK_ID != ''
+        if: always() && env.TASK_ID != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

@@ -78,7 +78,7 @@ async function main() {
     const pageId = page.id;
 
     // 各種プロパティの取得
-    const title = getNotionValue(props["名前"]) || "無題のタスク";
+    const title = getNotionValue(props["名称"]) || "無題のタスク";
     const taskId = getNotionValue(props["タスクID"]);
     const className = getNotionValue(props["クラス名"]);
     const packageName = getNotionValue(props["パッケージ名"]);

@@ -96,7 +96,7 @@ ${developmentRules}
 =========================================
 
 =========================================
-📌 【最重要：実装の前提・参考にする既存 of ソースコード】
+📌 【最重要：実装の前提・参考にする既存のソースコード】
 =========================================
 ${injectedBaseSources}
 =========================================
@@ -121,7 +121,7 @@ ${DESCRIPTION}
 🚨 【最優先・絶対遵守】クラス名・パッケージ名の報告ルール
 =========================================
 あなたはすべての処理（ファイル作成・修正）を完了したあと、回答の「一番最後」に、今回実際に作成・決定した「メインのクラス名」と「パッケージ名」を【必ず】【一言一句違わず】以下のタグ形式で出力しなければなりません。
-このタグが出力に含まれていない場合、システムが正常に動作しません。解説や補足はタグの外側に書き、タグの中身は指定の形式のみとしてください。
+このタグが出力に含まれていない場合、システムが正常に動作しません。解説や補足はタグの外側に書き、タグの中身は指定 of 形式のみとしてください。
 
 [METADATA_REPORT_START]
 - class: (作成したメインのクラス名)
@@ -152,7 +152,7 @@ ${DESCRIPTION}
 
   try {
     console.log("🤖 Claude Codeを実行中（オートメーションモード）...");
-    // 💡 前回の対話ブロック対策として "--yes" を引数にしっかりと追加してあります
+    // 引数からは不要なオプションを削除し、--printのみのクリーンな状態にしています
     const result = spawnSync("claude", ["--print", fs.readFileSync(tempPromptPath, "utf8")], {
       encoding: "utf8", stdio: "pipe", env: { ...process.env }
     });
@@ -297,7 +297,8 @@ async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, filePath, 
     await notion.pages.create({
       parent: { database_id: dbId },
       properties: {
-        "名前": { title: [{ type: "text", text: { content: `ソース個別配備: ${fileName} (${parentTitle})` } }] },
+        // 💡 確定した「"名称"」に修正を反映しました！
+        "名称": { title: [{ type: "text", text: { content: `ソース個別配備: ${fileName} (${parentTitle})` } }] },
         "ステータス": { status: { name: "作成完了" } },
         "タスクID": { rich_text: [{ type: "text", text: { content: `${parentTaskId}-${classNameCandidate.toUpperCase()}` } }] },
         "クラス名": { rich_text: [{ type: "text", text: { content: classNameCandidate } }] },
