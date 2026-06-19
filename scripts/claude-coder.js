@@ -152,8 +152,7 @@ ${DESCRIPTION}
 
   try {
     console.log("🤖 Claude Codeを実行中（オートメーションモード）...");
-    // 引数からは不要なオプションを削除し、--printのみのクリーンな状態にしています
-    const result = spawnSync("claude", ["--print", fs.readFileSync(tempPromptPath, "utf8")], {
+    const result = spawnSync("claude", ["--print", "--dangerously-skip-permissions", fs.readFileSync(tempPromptPath, "utf8")], {
       encoding: "utf8", stdio: "pipe", env: { ...process.env }
     });
 
