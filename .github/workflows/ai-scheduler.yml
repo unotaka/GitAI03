@@ -74,6 +74,7 @@ jobs:
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CLAUDE_CODE_NON_INTERACTIVE: "true"
         run: |
           # スクリプトを呼び出し、内部で `claude` コマンドを実行させます
           node scripts/claude-coder.js
