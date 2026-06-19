@@ -292,20 +292,36 @@ async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, filePath, 
   try {
     const fileName = path.basename(filePath);
     const ext = path.extname(filePath);
-    const classNameCandidate = fileName.replace(ext, '');
+    // 環境によるパス区切りの違いを考慮し、念のため一度「/」に統一してから置換
+    const cleanFileName = fileName.split('\\').pop().split('/').pop();
+    const classNameCandidate = cleanFileName.replace(ext, '').trim();
+
+    // 送信するプロパティのベース（名称、ステータス、タスクID）を定義
+    const propertiesPayload = {
+      "名称": { title: [{ type: "text", text: { content: `ソース個別配備: ${cleanFileName} (${parentTitle})` } }] },
+      "ステータス": { status: { name: "Git格納済み" } }, // 💡ご希望のステータス
+      "タスクID": { rich_text: [{ type: "text", text: { content: `${parentTaskId}-${classNameCandidate.toUpperCase()}` } }] }
+    };
+
+    // 💡 クラス名が正常に取得できている場合のみ、プロパティに含める（空文字での送信エラーを完全回避）
+    if (classNameCandidate) {
+      propertiesPayload["クラス名"] = { rich_text: [{ type: "text", text: { content: classNameCandidate } }] };
+    }
+
+    // 機能概要（説明文）があれば含める
+    if (summary) {
+      propertiesPayload["機能概要"] = { rich_text: [{ type: "text", text: { content: `親タスク ${parentTaskId} から分割生成されたファイル。\n役割: ${summary}` } }] };
+    }
+
+    // Notionへ子タスクを作成
     await notion.pages.create({
       parent: { database_id: dbId },
-      properties: {
-        // 💡 確定した「"名称"」に修正を反映しました！
-        "名称": { title: [{ type: "text", text: { content: `ソース個別配備: ${fileName} (${parentTitle})` } }] },
-        "ステータス": { status: { name: "作成完了" } },
-        "タスクID": { rich_text: [{ type: "text", text: { content: `${parentTaskId}-${classNameCandidate.toUpperCase()}` } }] },
-        "クラス名": { rich_text: [{ type: "text", text: { content: classNameCandidate } }] },
-        "機能概要": { rich_text: [{ type: "text", text: { content: `親タスク ${parentTaskId} から分割生成されたファイル。\n役割: ${summary}` } }] }
-      }
+      properties: propertiesPayload
     });
-    console.log(`  └ 新規起票成功: ${fileName}`);
-  } catch (err) { console.error(`  └ ⚠️ 新規起票失敗 (${filePath}):`, err.message); }
+    console.log(`  └ 新規起票成功: ${cleanFileName}`);
+  } catch (err) { 
+    console.error(`  └ ⚠️ 新規起票失敗 (${filePath}):`, err.message); 
+  }
 }
 
 main();
