@@ -96,7 +96,7 @@ ${developmentRules}
 =========================================
 
 =========================================
-📌 【最重要：実装の前提・参考にする既存のソースコード】
+📌 【最重要：実装の前提・参考にする既存 of ソースコード】
 =========================================
 ${injectedBaseSources}
 =========================================
@@ -152,7 +152,8 @@ ${DESCRIPTION}
 
   try {
     console.log("🤖 Claude Codeを実行中（オートメーションモード）...");
-    const result = spawnSync("claude", ["--print", fs.readFileSync(tempPromptPath, "utf8")], {
+    // 💡 前回の対話ブロック対策として "--yes" を引数にしっかりと追加してあります
+    const result = spawnSync("claude", ["--yes", "--print", fs.readFileSync(tempPromptPath, "utf8")], {
       encoding: "utf8", stdio: "pipe", env: { ...process.env }
     });
 
@@ -172,7 +173,7 @@ ${DESCRIPTION}
     if (metadataMatch && metadataMatch[1] && PAGE_ID) {
       console.log("📝 Claudeが作成したクラス名とパッケージ名を検出。Notionを更新します...");
       
-      const metaContent = metadataMatch[1]; // タグの「中身だけ」を確実に取得（インデックスの計算ズレなし）
+      const metaContent = metadataMatch[1]; 
       const metaLines = metaContent.split('\n');
       
       let finalClass = "";
@@ -189,11 +190,11 @@ ${DESCRIPTION}
         }
       }
 
-      // 💡 日本語の有無に関わらず、Claudeが真似して出力しがちなカッコ「()」や「[]」を綺麗に除去する
+      // 💡 カッコ「()」や「[]」を綺麗に除去する
       finalClass = finalClass.replace(/[()\[\]]/g, '').trim();
       finalPackage = finalPackage.replace(/[()\[\]]/g, '').trim();
 
-      // 💡 クラス名に日本語やカッコの説明が混ざっている場合、最初の英数字の塊だけを抽出する
+      // 💡 クラス名に日本語が含まれている場合、純粋なクラス名の抽出を試みます
       if (/[ぁ-んァ-ヶ一-龠]/.test(finalClass)) {
         console.log(`  └ ⚠️ クラス名に日本語が含まれているため、純粋なクラス名の抽出を試みます: "${finalClass}"`);
         const classMatch = finalClass.match(/[a-zA-Z0-9_]+/);
@@ -203,7 +204,7 @@ ${DESCRIPTION}
         }
       }
 
-      // 💡 パッケージ名に日本語の解説が混ざっている場合、その中から英数字とドットで構成された純粋なパッケージ名（例: com.example）だけを自動抽出する
+      // 💡 パッケージ名に日本語が含まれている場合、純粋な識別子の抽出を試みます
       if (/[ぁ-んァ-ヶ一-龠]/.test(finalPackage)) {
         console.log(`  └ ⚠️ パッケージ名に日本語が含まれているため、純粋な識別子の抽出を試みます: "${finalPackage}"`);
         
@@ -236,12 +237,15 @@ ${DESCRIPTION}
           console.log(`✅ Notionのプロパティを更新しました (クラス名: ${finalClass}, パッケージ名: ${finalPackage})`);
         } catch (err) {
           console.error("⚠️ Notionプロパティ更新エラー:", err.message);
+          process.exit(1);
         }
       } else {
-        console.warn("⚠️ メタデータタグは見つかりましたが、中身からclassやpackageの値を特定できませんでした。");
+        console.error("❌ エラー: メタデータタグは見つかりましたが、中身からclassやpackageの値を特定できませんでした。");
+        process.exit(1);
       }
     } else {
-      console.warn("⚠️ ログ内に METADATA_REPORT_START または END タグが正しく検出されませんでした。");
+      console.error("❌ エラー: ログ内に METADATA_REPORT_START または END タグが正しく検出されませんでした。処理を中止します。");
+      process.exit(1);
     }
 
     // 🔍 1. 仕様追加・変更の書き戻し
