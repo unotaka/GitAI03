@@ -73,6 +73,8 @@ async function main() {
   const { TASK_ID, TITLE, DESCRIPTION, PAGE_ID, CLASS_NAME, PACKAGE_NAME, SCREEN_ITEMS } = taskInfo;
   
   const developmentRules = await fetchNotionRules(RULE_PAGE_ID);
+  // 【追加】今回のタスクページ本文（項目、アクション、仕様テーブルなど）を丸ごと取得
+  const taskBodyContent = PAGE_ID ? await fetchNotionRules(PAGE_ID) : "なし";
 
   console.log("📂 Gitにコミット済みの既存ソースコードを自動スキャン中...");
   const projectRoot = path.join(__dirname, '..');
@@ -111,6 +113,15 @@ ${SCREEN_ITEMS || 'なし'}
 - 機能概要・仕様:
 ${DESCRIPTION}
 
+=========================================
+【最重要：画面ごとの詳細アクション・仕様テーブル】
+=========================================
+Notionのタスク本文から抽出された、ボタン操作や具体的なアクション仕様です。
+コードにロジックを実装する際は、以下の内容をすべて網羅して確実に反映してください：
+
+${taskBodyContent}
+=========================================
+
 【厳格な開発・出力ルール】
 1. 指定されたパッケージ名、クラス名がある場合は完全に準拠してソースコードを作成してください。もし未入力の場合は、仕様から最適な「クラス名」と「パッケージ名」をあなたが決定して作成してください。
 2. 画面項目が定義されている場合、それらの入力項目やボタンアクション、バリデーションロジックを漏れなく実装してください。
@@ -131,9 +142,11 @@ ${DESCRIPTION}
 =========================================
 💡 【重要：仕様追加・変更時の書き戻しルール】
 =========================================
+ソースコード作成・修正の過程で、元の仕様にない項目の追加やアクションの変更、新しい仕様の定義が発生した場合は、それらをNotionのテーブルに同期するため、必ず以下のフォーマットで報告してください。
+項目、アクション、仕様の3つを「|」で区切って記述してください。複数ある場合は改行して複数行書いてください。追加がない場合はこのタグ自体を出力しないでください。
+
 [NOTION_FEEDBACK_START]
-- 追加された画面項目: (具体的に)
-- 変更・追加された仕様: (理由と内容)
+項目名 | アクション内容 | 追加・変更された仕様の具体的な詳細
 [NOTION_FEEDBACK_END]
 
 =========================================
@@ -247,21 +260,41 @@ ${DESCRIPTION}
       process.exit(1);
     }
 
-    // 🔍 1. 仕様追加・変更の書き戻し
+    // 🔍 1. 仕様追加・変更のテーブル行への自動書き戻し
     const feedbackRegex = /\[NOTION_FEEDBACK_START\]([\s\S]*?)\[NOTION_FEEDBACK_END\]/;
     const feedbackMatch = outputText.match(feedbackRegex);
-    if (feedbackMatch && feedbackMatch[1] && PAGE_ID) {
-      const aiFeedback = feedbackMatch[1].trim();
-      try {
-        await notion.blocks.children.append({
-          block_id: PAGE_ID,
-          children: [
-            { object: "block", type: "heading_3", heading_3: { rich_text: [{ type: "text", text: { content: "🤖 Claude Code が自動追加した画面項目・仕様変更" } }] } },
-            { object: "block", type: "paragraph", paragraph: { rich_text: [{ type: "text", text: { content: aiFeedback } }], color: "blue_background" } }
-          ]
-        });
-        console.log("✅ Notionかんばんのタスク詳細に仕様変更を追記しました。");
-      } catch (err) { console.error("⚠️ Notion追記エラー:", err.message); }
+    
+    if (feedbackMatch && feedbackMatch[1] && DATABASE_ID) {
+      console.log("📝 Claudeによる仕様変更・追加の検知。テーブルに行を追加します...");
+      const feedbackLines = feedbackMatch[1].trim().split('\n');
+      
+      for (const line of feedbackLines) {
+        // 「|」で分割して、項目、アクション、仕様に分ける
+        const parts = line.split('|').map(p => p.trim());
+        if (parts.length >= 2) {
+          const itemName = parts[0];
+          const actionName = parts[1] || "未入力";
+          const specDetail = parts[2] || "自動追加された仕様";
+          
+          try {
+            // Notionのデータベースへ、新しい「項目・アクション・仕様」の行を直接作成
+            await notion.pages.create({
+              parent: { database_id: DATABASE_ID },
+              properties: {
+                "名称": { title: [{ type: "text", text: { content: `【仕様変更】${itemName} (${TITLE})` } }] },
+                "ステータス": { status: { name: "Git格納済み" } },
+                "タスクID": { rich_text: [{ type: "text", text: { content: `${TASK_ID}-MOD` } }] },
+                // 💡 インラインテーブル側のプロパティ名「項目」「アクション」「仕様」にマッピング
+                "画面項目": { rich_text: [{ type: "text", text: { content: itemName } }] },
+                "仕様": { rich_text: [{ type: "text", text: { content: `【${actionName}】 ${specDetail}` } }] }
+              }
+            });
+            console.log(`  └ 📝 テーブルに行を追加成功: ${itemName}`);
+          } catch (err) {
+            console.error(`  └ ⚠️ テーブルへの行追加失敗:`, err.message);
+          }
+        }
+      }
     }
 
     // 🔍 2. 複数ソースファイル生成時のタスク分解
@@ -274,7 +307,7 @@ ${DESCRIPTION}
 
       for (const line of reportLines) {
         if (line.includes('- file:')) {
-          if (currentFile) await createSubTaskInNotion(DATABASE_ID, TASK_ID, TITLE, currentFile, currentSummary);
+          if (currentFile) await createSubTaskInNotion(DATABASE_ID, TASK_ID, TITLE, finalPackage, currentFile, currentSummary);
           currentFile = line.replace('- file:', '').trim(); currentSummary = "";
         } else if (line.includes('summary:')) {
           currentSummary = line.replace('summary:', '').trim();
@@ -282,30 +315,59 @@ ${DESCRIPTION}
           currentSummary += " " + line.trim();
         }
       }
-      if (currentFile) await createSubTaskInNotion(DATABASE_ID, TASK_ID, TITLE, currentFile, currentSummary);
+      if (currentFile) await createSubTaskInNotion(DATABASE_ID, TASK_ID, TITLE, finalPackage, currentFile, currentSummary);
     }
     console.log('✅ すべての複合自動化プロセスが正常に完了しました！');
   } catch (error) { console.error('❌ 例外エラー:', error); process.exit(1); }
 }
 
-async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, filePath, summary) {
+// 💡 引数の4番目に親タスクの「パッケージ名（parentPackage）」を受け取れるように拡張
+async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, parentPackage, filePath, summary) {
   try {
     const fileName = path.basename(filePath);
     const ext = path.extname(filePath);
-    // 環境によるパス区切りの違いを考慮し、念のため一度「/」に統一してから置換
     const cleanFileName = fileName.split('\\').pop().split('/').pop();
     const classNameCandidate = cleanFileName.replace(ext, '').trim();
+
+    if (!classNameCandidate) {
+      console.log(`  └ ⚠️ クラス名が特定できないため、スキップします: ${cleanFileName}`);
+      return;
+    }
+
+    // 🚨 【重複防止チェック】すでに同じ「クラス名」かつ「パッケージ名」のタスクがないかNotionを検索
+    const filterAnd = [
+      { property: "クラス名", rich_text: { equals: classNameCandidate } }
+    ];
+    if (parentPackage) {
+      filterAnd.push({ property: "パッケージ名", rich_text: { equals: parentPackage } });
+    }
+
+    const existingCheck = await notion.databases.query({
+      database_id: dbId,
+      filter: { and: filterAnd },
+      page_size: 1
+    });
+
+    // 💡 すでにかんばんボードに存在している場合は、追加処理をスキップする
+    if (existingCheck.results && existingCheck.results.length > 0) {
+      console.log(`  └ ⏭️ 重複防止: クラス名「${classNameCandidate}」（パッケージ: ${parentPackage || "なし"}）は既に存在するため、かんばんへの追加をスキップします。`);
+      return;
+    }
+
+    // 元のタスクIDのロジック（親タスクID-クラス名）はそのまま綺麗に維持
+    const originalTaskIdRule = `${parentTaskId}-${classNameCandidate.toUpperCase()}`;
 
     // 送信するプロパティのベース（名称、ステータス、タスクID）を定義
     const propertiesPayload = {
       "名称": { title: [{ type: "text", text: { content: `ソース個別配備: ${cleanFileName} (${parentTitle})` } }] },
-      "ステータス": { status: { name: "Git格納済み" } }, // 💡ご希望のステータス
-      "タスクID": { rich_text: [{ type: "text", text: { content: `${parentTaskId}-${classNameCandidate.toUpperCase()}` } }] }
+      "ステータス": { status: { name: "Git格納済み" } },
+      "タスクID": { rich_text: [{ type: "text", text: { content: originalTaskIdRule } }] },
+      "クラス名": { rich_text: [{ type: "text", text: { content: classNameCandidate } }] }
     };
 
-    // 💡 クラス名が正常に取得できている場合のみ、プロパティに含める（空文字での送信エラーを完全回避）
-    if (classNameCandidate) {
-      propertiesPayload["クラス名"] = { rich_text: [{ type: "text", text: { content: classNameCandidate } }] };
+    // パッケージ名があれば格納
+    if (parentPackage) {
+      propertiesPayload["パッケージ名"] = { rich_text: [{ type: "text", text: { content: parentPackage } }] };
     }
 
     // 機能概要（説明文）があれば含める
@@ -313,12 +375,12 @@ async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, filePath, 
       propertiesPayload["機能概要"] = { rich_text: [{ type: "text", text: { content: `親タスク ${parentTaskId} から分割生成されたファイル。\n役割: ${summary}` } }] };
     }
 
-    // Notionへ子タスクを作成
+    // 重複がないことが確認できたので、Notionへ子タスクを作成
     await notion.pages.create({
       parent: { database_id: dbId },
       properties: propertiesPayload
     });
-    console.log(`  └ 新規起票成功: ${cleanFileName}`);
+    console.log(`  └ 🎉 新規起票成功: ${cleanFileName} (タスクID: ${originalTaskIdRule})`);
   } catch (err) { 
     console.error(`  └ ⚠️ 新規起票失敗 (${filePath}):`, err.message); 
   }
