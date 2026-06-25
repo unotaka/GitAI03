@@ -9,6 +9,8 @@ const { Client } = require("@notionhq/client");
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 const RULE_PAGE_ID = "3814c3b4a17280e18f9dc4ee0ba5019b"; // 「AI03開発ルール」ページID
+const SYSTEM_OVERVIEW_PAGE_ID = "1684c3b4a17280dcbd54d8a435fa8f2f"; // AI03_システム概要
+const TABLE_DEF_PAGE_ID = "1684c3b4a1728089a20cffbe01ba320e";       // AI03_テーブル定義
 
 /**
  * 指定されたディレクトリ配下のファイルを再帰的に探索し、ソースコードを取得する関数
@@ -44,7 +46,7 @@ function getAllExistingSources(dirPath, extensions = ['.java', '.ts', '.js', '.p
  */
 async function fetchNotionRules(pageId) {
   try {
-    console.log("📥 Notionから『AI03開発ルール』を取得中...");
+    console.log(`📥 Notionからページ (ID: ${pageId}) の情報を取得中...`);
     const response = await notion.blocks.children.list({ block_id: pageId });
     let rulesText = "";
     for (const block of response.results) {
@@ -57,9 +59,33 @@ async function fetchNotionRules(pageId) {
     }
     return rulesText.trim();
   } catch (error) {
-    console.warn("⚠️ 開発ルールの取得に失敗しました。デフォルト進行:", error.message);
+    console.warn("⚠️ ページの取得に失敗しました。デフォルト進行:", error.message);
     return "※標準的なクリーンコードに準拠してください。";
   }
+}
+
+/**
+ * 指定された親ページの配下にあるすべてのサブページ（子ページ）を巡回し、
+ * 各テーブル定義などの中身のテキストをすべて結合して取得する関数
+ */
+async function fetchAllSubPagesContent(parentPageId) {
+  let allContent = "";
+  try {
+    const response = await notion.blocks.children.list({ block_id: parentPageId });
+    
+    for (const block of response.results) {
+      if (block.type === 'child_page' && block.id) {
+        const subPageTitle = block.child_page.title || "名称未設定テーブル";
+        console.log(`  └ 🔍 サブページを発見: 「${subPageTitle}」の内容を読み込み中...`);
+        
+        const subPageText = await fetchNotionRules(block.id.replace(/-/g, ''));
+        allContent += `\n\n--- 📄 テーブル定義詳細：${subPageTitle} ---\n${subPageText}`;
+      }
+    }
+  } catch (err) {
+    console.error(`  ⚠️ サブページの自動巡回中にエラーが発生しました:`, err.message);
+  }
+  return allContent;
 }
 
 async function main() {
@@ -73,7 +99,16 @@ async function main() {
   const { TASK_ID, TITLE, DESCRIPTION, PAGE_ID, CLASS_NAME, PACKAGE_NAME, SCREEN_ITEMS } = taskInfo;
   
   const developmentRules = await fetchNotionRules(RULE_PAGE_ID);
-  // 【追加】今回のタスクページ本文（項目、アクション、仕様テーブルなど）を丸ごと取得
+  const systemOverview = await fetchNotionRules(SYSTEM_OVERVIEW_PAGE_ID);
+  
+  // 親ページのテキストを取得
+  const tableDefinitionsParent = await fetchNotionRules(TABLE_DEF_PAGE_ID);
+  console.log("🗂️ 「AI03_テーブル定義」配下の全サブページを自動スキャンしています...");
+  // 配下にある「ユーザマスタ」などの子ページ群の内容を自動で全て取得
+  const subPagesContent = await fetchAllSubPagesContent(TABLE_DEF_PAGE_ID);
+  const tableDefinitions = `${tableDefinitionsParent}\n${subPagesContent}`;
+
+  // 今回のタスクページ本文（項目、アクション、仕様テーブルなど）を丸ごと取得
   const taskBodyContent = PAGE_ID ? await fetchNotionRules(PAGE_ID) : "なし";
 
   console.log("📂 Gitにコミット済みの既存ソースコードを自動スキャン中...");
@@ -114,6 +149,21 @@ ${SCREEN_ITEMS || 'なし'}
 ${DESCRIPTION}
 
 =========================================
+📌 【共通参照情報：システム概要】
+=========================================
+アプリケーション全体の基本仕様・アーキテクチャ概要です。実装時に全体の整合性を保ってください：
+
+${systemOverview}
+
+=========================================
+📌 【共通参照情報：テーブル定義（関連定義含む）】
+=========================================
+データベース構造および関連するテーブルの定義情報です。データの永続化やクエリ、エンティティ設計の際に必ず参照し、正確にマッピングしてください：
+
+${tableDefinitions}
+=========================================
+
+=========================================
 【最重要：画面ごとの詳細アクション・仕様テーブル】
 =========================================
 Notionのタスク本文から抽出された、ボタン操作や具体的なアクション仕様です。
@@ -132,7 +182,7 @@ ${taskBodyContent}
 🚨 【最優先・絶対遵守】クラス名・パッケージ名の報告ルール
 =========================================
 あなたはすべての処理（ファイル作成・修正）を完了したあと、回答の「一番最後」に、今回実際に作成・決定した「メインのクラス名」と「パッケージ名」を【必ず】【一言一句違わず】以下のタグ形式で出力しなければなりません。
-このタグが出力に含まれていない場合、システムが正常に動作しません。解説や補足はタグの外側に書き、タグの中身は指定 of 形式のみとしてください。
+このタグが出力に含まれていない場合、システムが正常に動作しません。解説や補足はタグの外側に書き、タグの中身は指定の形式のみとしてください。
 
 [METADATA_REPORT_START]
 - class: (作成したメインのクラス名)
@@ -269,7 +319,6 @@ ${taskBodyContent}
       const feedbackLines = feedbackMatch[1].trim().split('\n');
       
       for (const line of feedbackLines) {
-        // 「|」で分割して、項目、アクション、仕様に分ける
         const parts = line.split('|').map(p => p.trim());
         if (parts.length >= 2) {
           const itemName = parts[0];
@@ -277,14 +326,12 @@ ${taskBodyContent}
           const specDetail = parts[2] || "自動追加された仕様";
           
           try {
-            // Notionのデータベースへ、新しい「項目・アクション・仕様」の行を直接作成
             await notion.pages.create({
               parent: { database_id: DATABASE_ID },
               properties: {
                 "名称": { title: [{ type: "text", text: { content: `【仕様変更】${itemName} (${TITLE})` } }] },
                 "ステータス": { status: { name: "Git格納済み" } },
                 "タスクID": { rich_text: [{ type: "text", text: { content: `${TASK_ID}-MOD` } }] },
-                // 💡 インラインテーブル側のプロパティ名「項目」「アクション」「仕様」にマッピング
                 "画面項目": { rich_text: [{ type: "text", text: { content: itemName } }] },
                 "仕様": { rich_text: [{ type: "text", text: { content: `【${actionName}】 ${specDetail}` } }] }
               }
@@ -321,7 +368,6 @@ ${taskBodyContent}
   } catch (error) { console.error('❌ 例外エラー:', error); process.exit(1); }
 }
 
-// 💡 引数の4番目に親タスクの「パッケージ名（parentPackage）」を受け取れるように拡張
 async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, parentPackage, filePath, summary) {
   try {
     const fileName = path.basename(filePath);
@@ -348,16 +394,13 @@ async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, parentPack
       page_size: 1
     });
 
-    // 💡 すでにかんばんボードに存在している場合は、追加処理をスキップする
     if (existingCheck.results && existingCheck.results.length > 0) {
       console.log(`  └ ⏭️ 重複防止: クラス名「${classNameCandidate}」（パッケージ: ${parentPackage || "なし"}）は既に存在するため、かんばんへの追加をスキップします。`);
       return;
     }
 
-    // 元のタスクIDのロジック（親タスクID-クラス名）はそのまま綺麗に維持
     const originalTaskIdRule = `${parentTaskId}-${classNameCandidate.toUpperCase()}`;
 
-    // 送信するプロパティのベース（名称、ステータス、タスクID）を定義
     const propertiesPayload = {
       "名称": { title: [{ type: "text", text: { content: `ソース個別配備: ${cleanFileName} (${parentTitle})` } }] },
       "ステータス": { status: { name: "Git格納済み" } },
@@ -365,17 +408,14 @@ async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, parentPack
       "クラス名": { rich_text: [{ type: "text", text: { content: classNameCandidate } }] }
     };
 
-    // パッケージ名があれば格納
     if (parentPackage) {
       propertiesPayload["パッケージ名"] = { rich_text: [{ type: "text", text: { content: parentPackage } }] };
     }
 
-    // 機能概要（説明文）があれば含める
     if (summary) {
       propertiesPayload["機能概要"] = { rich_text: [{ type: "text", text: { content: `親タスク ${parentTaskId} から分割生成されたファイル。\n役割: ${summary}` } }] };
     }
 
-    // 重複がないことが確認できたので、Notionへ子タスクを作成
     await notion.pages.create({
       parent: { database_id: dbId },
       properties: propertiesPayload
