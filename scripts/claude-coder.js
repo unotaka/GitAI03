@@ -25,7 +25,6 @@ function getAllExistingSources(dirPath, extensions = ['.java', '.ts', '.js', '.p
     const stat = fs.statSync(fullPath);
 
     if (stat.isDirectory()) {
-      // node_modulesや.git、テスト出力ディレクトリなどは除外
       if (item !== 'node_modules' && item !== '.git' && item !== 'dist' && item !== 'build') {
         results += getAllExistingSources(fullPath, extensions);
       }
@@ -56,6 +55,9 @@ async function fetchNotionRules(pageId) {
       else if (block.type === "heading_3") rulesText += `\n### ${block.heading_3.rich_text.map(t => t.plain_text).join("")}\n`;
       else if (block.type === "bulleted_list_item") rulesText += `* ${block.bulleted_list_item.rich_text.map(t => t.plain_text).join("")}\n`;
       else if (block.type === "numbered_list_item") rulesText += `1. ${block.numbered_list_item.rich_text.map(t => t.plain_text).join("")}\n`;
+      else if (block.type === "table") {
+        rulesText += "\n[テーブルデータ]\n";
+      }
     }
     return rulesText.trim();
   } catch (error) {
@@ -101,14 +103,11 @@ async function main() {
   const developmentRules = await fetchNotionRules(RULE_PAGE_ID);
   const systemOverview = await fetchNotionRules(SYSTEM_OVERVIEW_PAGE_ID);
   
-  // 親ページのテキストを取得
   const tableDefinitionsParent = await fetchNotionRules(TABLE_DEF_PAGE_ID);
   console.log("🗂️ 「AI03_テーブル定義」配下の全サブページを自動スキャンしています...");
-  // 配下にある「ユーザマスタ」などの子ページ群の内容を自動で全て取得
   const subPagesContent = await fetchAllSubPagesContent(TABLE_DEF_PAGE_ID);
   const tableDefinitions = `${tableDefinitionsParent}\n${subPagesContent}`;
 
-  // 今回のタスクページ本文（項目、アクション、仕様テーブルなど）を丸ごと取得
   const taskBodyContent = PAGE_ID ? await fetchNotionRules(PAGE_ID) : "なし";
 
   console.log("📂 Gitにコミット済みの既存ソースコードを自動スキャン中...");
@@ -192,7 +191,7 @@ ${taskBodyContent}
 =========================================
 💡 【重要：仕様追加・変更時の書き戻しルール】
 =========================================
-ソースコード作成・修正の過程で、元の仕様にない項目の追加やアクションの変更、新しい仕様の定義が発生した場合は、それらをNotionのテーブルに同期するため、必ず以下のフォーマットで報告してください。
+ソースコード作成・修正の過程で、元の仕様にない項目の追加やアクションの変更、新しい仕様の定義が発生した場合は、それらをNotionの本文テーブルに同期するため、必ず以下のフォーマットで報告してください。
 項目、アクション、仕様の3つを「|」で区切って記述してください。複数ある場合は改行して複数行書いてください。追加がない場合はこのタグ自体を出力しないでください。
 
 [NOTION_FEEDBACK_START]
@@ -228,7 +227,10 @@ ${taskBodyContent}
     const outputText = result.stdout;
     console.log("\n--- Claude Code 実行ログ ---\n", outputText, "\n-----------------------------\n");
 
-    // 🔍 【クラス名・パッケージ名の書き戻しロジック（完全に安全なmatch方式へ統一）】
+    let finalClass = "";
+    let finalPackage = "";
+
+    // 🔍 【クラス名・パッケージ名の書き戻しロジック】
     const metadataRegex = /\[METADATA_REPORT_START\]([\s\S]*?)\[METADATA_REPORT_END\]/i;
     const metadataMatch = outputText.match(metadataRegex);
 
@@ -237,9 +239,6 @@ ${taskBodyContent}
       
       const metaContent = metadataMatch[1]; 
       const metaLines = metaContent.split('\n');
-      
-      let finalClass = "";
-      let finalPackage = "";
 
       for (const line of metaLines) {
         const cleanLine = line.replace(/^[-*\s[\]]+/, '').trim();
@@ -252,11 +251,9 @@ ${taskBodyContent}
         }
       }
 
-      // 💡 カッコ「()」や「[]」を綺麗に除去する
       finalClass = finalClass.replace(/[()\[\]]/g, '').trim();
       finalPackage = finalPackage.replace(/[()\[\]]/g, '').trim();
 
-      // 💡 クラス名に日本語が含まれている場合、純粋なクラス名の抽出を試みます
       if (/[ぁ-んァ-ヶ一-龠]/.test(finalClass)) {
         console.log(`  └ ⚠️ クラス名に日本語が含まれているため、純粋なクラス名の抽出を試みます: "${finalClass}"`);
         const classMatch = finalClass.match(/[a-zA-Z0-9_]+/);
@@ -266,10 +263,8 @@ ${taskBodyContent}
         }
       }
 
-      // 💡 パッケージ名に日本語が含まれている場合、純粋な識別子の抽出を試みます
       if (/[ぁ-んァ-ヶ一-龠]/.test(finalPackage)) {
         console.log(`  └ ⚠️ パッケージ名に日本語が含まれているため、純粋な識別子の抽出を試みます: "${finalPackage}"`);
-        
         const packageExtractRegex = /[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+/;
         const match = finalPackage.match(packageExtractRegex);
         
@@ -310,37 +305,60 @@ ${taskBodyContent}
       process.exit(1);
     }
 
-    // 🔍 1. 仕様追加・変更のテーブル行への自動書き戻し
+    // 🔍 1. 仕様追加・変更の「シンプルなテーブル（表）ブロック」への行追記ロジック
     const feedbackRegex = /\[NOTION_FEEDBACK_START\]([\s\S]*?)\[NOTION_FEEDBACK_END\]/;
     const feedbackMatch = outputText.match(feedbackRegex);
     
-    if (feedbackMatch && feedbackMatch[1] && DATABASE_ID) {
-      console.log("📝 Claudeによる仕様変更・追加の検知。テーブルに行を追加します...");
+    if (feedbackMatch && feedbackMatch[1] && PAGE_ID) {
+      console.log("📝 Claudeによる仕様変更・追加の検知。本文の仕様テーブルに行を直接追記します...");
       const feedbackLines = feedbackMatch[1].trim().split('\n');
       
-      for (const line of feedbackLines) {
-        const parts = line.split('|').map(p => p.trim());
-        if (parts.length >= 2) {
-          const itemName = parts[0];
-          const actionName = parts[1] || "未入力";
-          const specDetail = parts[2] || "自動追加された仕様";
-          
-          try {
-            await notion.pages.create({
-              parent: { database_id: DATABASE_ID },
-              properties: {
-                "名称": { title: [{ type: "text", text: { content: `【仕様変更】${itemName} (${TITLE})` } }] },
-                "ステータス": { status: { name: "Git格納済み" } },
-                "タスクID": { rich_text: [{ type: "text", text: { content: `${TASK_ID}-MOD` } }] },
-                "画面項目": { rich_text: [{ type: "text", text: { content: itemName } }] },
-                "仕様": { rich_text: [{ type: "text", text: { content: `【${actionName}】 ${specDetail}` } }] }
-              }
-            });
-            console.log(`  └ 📝 テーブルに行を追加成功: ${itemName}`);
-          } catch (err) {
-            console.error(`  └ ⚠️ テーブルへの行追加失敗:`, err.message);
+      try {
+        // ページ内にあるすべてのブロックをスキャンして「table」タイプのブロックを探す
+        const pageBlocks = await notion.blocks.children.list({ block_id: PAGE_ID });
+        const tableBlock = pageBlocks.results.find(b => b.type === 'table');
+        
+        if (tableBlock) {
+          for (const line of feedbackLines) {
+            const parts = line.split('|').map(p => p.trim());
+            if (parts.length >= 2) {
+              const itemName = parts[0];
+              const actionName = parts[1] || "未入力";
+              const specDetail = parts[2] || "自動追加";
+
+              // テーブルの末尾に行（table_row）ブロックを子要素として直接追加
+              await notion.blocks.children.append({
+                block_id: tableBlock.id,
+                children: [
+                  {
+                    object: 'block',
+                    type: 'table_row',
+                    table_row: {
+                      cells: [
+                        [{ type: 'text', text: { content: itemName } }],
+                        [{ type: 'text', text: { content: actionName } }],
+                        [{ type: 'text', text: { content: specDetail } }]
+                      ]
+                    }
+                  }
+                ]
+              });
+              console.log(`  └ 📝 仕様テーブルに行を追加しました: ${itemName}`);
+            }
           }
+        } else {
+          // 万が一テーブルブロックがまだ無かった場合は、汎用テキストとして下に追記
+          const childrenPayload = [
+            { object: 'block', type: 'heading_3', heading_3: { rich_text: [{ type: 'text', text: { content: "🤖 自動追加された追加仕様項目" } }] } }
+          ];
+          for (const line of feedbackLines) {
+            childrenPayload.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: [{ type: 'text', text: { content: line } }] } });
+          }
+          await notion.blocks.children.append({ block_id: PAGE_ID, children: childrenPayload });
+          console.log("  └ 📝 ページ末尾にテキストとして仕様変更を追記しました。");
         }
+      } catch (err) {
+        console.error("  └ ⚠️ 本文テーブルへの書き戻しに失敗しました:", err.message);
       }
     }
 
@@ -380,7 +398,6 @@ async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, parentPack
       return;
     }
 
-    // 🚨 【重複防止チェック】すでに同じ「クラス名」かつ「パッケージ名」のタスクがないかNotionを検索
     const filterAnd = [
       { property: "クラス名", rich_text: { equals: classNameCandidate } }
     ];
