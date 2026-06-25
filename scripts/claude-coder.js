@@ -8,9 +8,10 @@ const { Client } = require("@notionhq/client");
 
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
-const RULE_PAGE_ID = "3814c3b4a17280e18f9dc4ee0ba5019b"; // 「AI03開発ルール」ページID
-const SYSTEM_OVERVIEW_PAGE_ID = "1684c3b4a17280dcbd54d8a435fa8f2f"; // AI03_システム概要
-const TABLE_DEF_PAGE_ID = "1684c3b4a1728089a20cffbe01ba320e";       // AI03_テーブル定義
+
+// 💡 画像の正規URLに基づき、共通参照ページのIDを正しい値へ修正しました
+const SYSTEM_OVERVIEW_PAGE_ID = "3884c3b4a172807baeacecf6aebded62"; // AI03_システム概要
+const TABLE_DEF_PAGE_ID = "3884c3b4a172803c90b9e21a0774175c";       // AI03_テーブル定義
 
 /**
  * 指定されたディレクトリ配下のファイルを再帰的に探索し、ソースコードを取得する関数
@@ -100,7 +101,7 @@ async function main() {
   const taskInfo = JSON.parse(fs.readFileSync(taskInfoPath, 'utf8'));
   const { TASK_ID, TITLE, DESCRIPTION, PAGE_ID, CLASS_NAME, PACKAGE_NAME, SCREEN_ITEMS } = taskInfo;
   
-  const developmentRules = await fetchNotionRules(RULE_PAGE_ID);
+  // 💡 削除された開発ルールのフェッチ処理を除外しました
   const systemOverview = await fetchNotionRules(SYSTEM_OVERVIEW_PAGE_ID);
   
   const tableDefinitionsParent = await fetchNotionRules(TABLE_DEF_PAGE_ID);
@@ -124,12 +125,6 @@ async function main() {
 
   const promptContent = `
 あなたはシニアソフトウェアエンジニアとして、Notionかんばんから連携された以下の詳細プロパティ情報に基づき、最適な本番コードおよびテストコードを生成してください。
-
-=========================================
-【最優先】AI03開発ルール
-=========================================
-${developmentRules}
-=========================================
 
 =========================================
 📌 【最重要：実装の前提・参考にする既存のソースコード】
@@ -314,7 +309,6 @@ ${taskBodyContent}
       const feedbackLines = feedbackMatch[1].trim().split('\n');
       
       try {
-        // ページ内にあるすべてのブロックをスキャンして「table」タイプのブロックを探す
         const pageBlocks = await notion.blocks.children.list({ block_id: PAGE_ID });
         const tableBlock = pageBlocks.results.find(b => b.type === 'table');
         
@@ -326,7 +320,6 @@ ${taskBodyContent}
               const actionName = parts[1] || "未入力";
               const specDetail = parts[2] || "自動追加";
 
-              // テーブルの末尾に行（table_row）ブロックを子要素として直接追加
               await notion.blocks.children.append({
                 block_id: tableBlock.id,
                 children: [
@@ -347,7 +340,6 @@ ${taskBodyContent}
             }
           }
         } else {
-          // 万が一テーブルブロックがまだ無かった場合は、汎用テキストとして下に追記
           const childrenPayload = [
             { object: 'block', type: 'heading_3', heading_3: { rich_text: [{ type: 'text', text: { content: "🤖 自動追加された追加仕様項目" } }] } }
           ];
@@ -435,7 +427,7 @@ async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, parentPack
 
     await notion.pages.create({
       parent: { database_id: dbId },
-      properties: propertiesPayload
+      properties: payload === undefined ? propertiesPayload : payload
     });
     console.log(`  └ 🎉 新規起票成功: ${cleanFileName} (タスクID: ${originalTaskIdRule})`);
   } catch (err) { 
