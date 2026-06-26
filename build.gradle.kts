@@ -1,7 +1,7 @@
 plugins {
     java
-    id("org.springframework.boot") version "3.2.5"
-    id("io.spring.dependency-management") version "1.1.4"
+    id("org.springframework.boot") version "3.4.1"
+    id("io.spring.dependency-management") version "1.1.7"
     checkstyle
 }
 
@@ -24,15 +24,19 @@ repositories {
 }
 
 dependencies {
-    // Spring Boot
+    // Spring Boot Web
     implementation("org.springframework.boot:spring-boot-starter-web")
-    
+
+    // JPA / PostgreSQL
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    runtimeOnly("org.postgresql:postgresql")
+
     // Lombok (CLAUDE_JAVA.md のボイラープレート削減規約に対応)
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
     testCompileOnly("org.projectlombok:lombok")
     testAnnotationProcessor("org.projectlombok:lombok")
-    
+
     // 開発ツール (ホットリロード)
     developmentOnly("org.springframework.boot:spring-boot-devtools")
 
@@ -41,6 +45,7 @@ dependencies {
         exclude(group = "org.junit.vintage", module = "junit-vintage-engine")
     }
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testRuntimeOnly("com.h2database:h2")
 }
 
 tasks.withType<Test> {
@@ -49,7 +54,7 @@ tasks.withType<Test> {
 
 // Checkstyle の設定 (コード規約違反時にビルドを落とす設定)
 checkstyle {
-    toolVersion = "10.12.5"
+    toolVersion = "10.21.0"
     isIgnoreFailures = false
     maxWarnings = 0
 }
