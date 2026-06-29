@@ -30,3 +30,7 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### AI Developer Loop Custom Guard ###
+# Claude Coder用の一時的なプロンプトファイルのコミットを防止
+temp_prompt_*.txt

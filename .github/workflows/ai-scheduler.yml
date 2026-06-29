@@ -33,12 +33,11 @@ jobs:
       - name: Install Dependencies
         run: |
           npm install -g pnpm
-          
-          # スクリプトの実行に必要な Notion 公式 SDK をインストールします
           npm install @notionhq/client
-          
-          # OAuthトークンを使用して動く CLI ツール「Claude Code」をグローバルインストール
           npm install -g @anthropic-ai/claude-code
+          
+          # 💡 【修正】文字列の閉じダブルクォーテーションを補完しました
+          echo "☕ Java開発フェーズのため、フロントエンドのpnpm依存関係の同期をスキップします。"
           
           # もし既存の package.json がある場合は、他の依存関係も通常通りインストール
           if [ -f "package.json" ]; then

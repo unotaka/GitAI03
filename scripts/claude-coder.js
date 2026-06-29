@@ -6,7 +6,10 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { Client } = require("@notionhq/client");
 
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
+const notion = new Client({ 
+  auth: process.env.NOTION_TOKEN,
+  timeoutMs: 30000 // 30秒タイムアウトで瞬断を防ぐ
+});
 const DATABASE_ID = process.env.NOTION_DATABASE_ID;
 
 // 💡 画像の正規URLに基づき、共通参照ページのIDを正しい値へ修正しました
@@ -113,7 +116,8 @@ async function main() {
 
   console.log("📂 Gitにコミット済みの既存ソースコードを自動スキャン中...");
   const projectRoot = path.join(__dirname, '..');
-  const srcDir = path.join(projectRoot, 'src'); 
+  // 【Javaフェーズ対応】Next.js用の src から、Java標準の src/main/java へスキャンパスを変更
+  const srcDir = path.join(projectRoot, 'src', 'main', 'java');
   
   let injectedBaseSources = getAllExistingSources(srcDir, ['.java', '.ts', '.js']);
   
@@ -170,7 +174,7 @@ ${taskBodyContent}
 1. 指定されたパッケージ名、クラス名がある場合は完全に準拠してソースコードを作成してください。もし未入力の場合は、仕様から最適な「クラス名」と「パッケージ名」をあなたが決定して作成してください。
 2. 画面項目が定義されている場合、それらの入力項目やボタンアクション、バリデーションロジックを漏れなく実装してください。
 3. コード生成時、もし複数のソースファイルに分割して作成した場合は、後述の「マルチファイル報告タグ」を使用して作成したファイルをシステムに明確に伝えてください。
-4. ファイルは現在のプロジェクトディレクトリ内の適切なパスへ直接書き出して保存してください。
+4. 【Java同期修正】生成したJavaファイルは、パッケージ名（ドット区切り）をフォルダ階層（スラッシュ区切り）に変換し、必ず「src/main/java/パッケージ階層/クラス名.java」の正しいディレクトリパスへ直接新規作成・上書き保存してください。（例: packageが com.example.ui なら src/main/java/com/example/ui/クラス名.java）
 
 =========================================
 🚨 【最優先・絶対遵守】クラス名・パッケージ名の報告ルール
@@ -425,9 +429,10 @@ async function createSubTaskInNotion(dbId, parentTaskId, parentTitle, parentPack
       propertiesPayload["機能概要"] = { rich_text: [{ type: "text", text: { content: `親タスク ${parentTaskId} から分割生成されたファイル。\n役割: ${summary}` } }] };
     }
 
+    // 💡 【修正】未定義変数 payload の条件分岐を排除し、直接オブジェクトを渡す安全な形に修正しました
     await notion.pages.create({
       parent: { database_id: dbId },
-      properties: payload === undefined ? propertiesPayload : payload
+      properties: propertiesPayload
     });
     console.log(`  └ 🎉 新規起票成功: ${cleanFileName} (タスクID: ${originalTaskIdRule})`);
   } catch (err) { 
