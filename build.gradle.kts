@@ -37,6 +37,9 @@ dependencies {
     testCompileOnly("org.projectlombok:lombok")
     testAnnotationProcessor("org.projectlombok:lombok")
 
+    // BCrypt password hashing
+    implementation("org.springframework.security:spring-security-crypto")
+
     // 開発ツール (ホットリロード)
     developmentOnly("org.springframework.boot:spring-boot-devtools")
 
