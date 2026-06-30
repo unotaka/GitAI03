@@ -2,9 +2,9 @@ spring:
   application:
     name: ai03
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ai03}
-    username: ${DB_USERNAME:ai03user}
-    password: ${DB_PASSWORD:ai03pass}
+    url: jdbc:postgresql://db.kuovzhfhwgvnncnejmvc.supabase.co:5432/postgres
+    username: postgres
+    password: a8s52M_uaNXHLLp
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
@@ -12,7 +12,7 @@ spring:
       connection-timeout: 30000
   jpa:
     hibernate:
-      ddl-auto: validate
+      ddl-auto: update
     show-sql: false
     properties:
       hibernate:
