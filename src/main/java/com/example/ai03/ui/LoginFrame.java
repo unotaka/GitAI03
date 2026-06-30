@@ -3,6 +3,7 @@ package com.example.ai03.ui;
 import com.example.ai03.domain.entity.User;
 import com.example.ai03.exception.BusinessException;
 import com.example.ai03.service.AuthService;
+import com.example.ai03.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 
 import javax.swing.JButton;
@@ -25,13 +26,16 @@ public class LoginFrame extends JFrame {
     private static final int INSETS_SIZE = 8;
 
     private final AuthService authService;
+    private final UserService userService;
 
     private JTextField userIdField;
     private JPasswordField passwordField;
     private JButton loginButton;
+    private JButton registerButton;
 
-    public LoginFrame(AuthService authService) {
+    public LoginFrame(AuthService authService, UserService userService) {
         this.authService = authService;
+        this.userService = userService;
         initComponents();
     }
 
@@ -74,6 +78,14 @@ public class LoginFrame extends JFrame {
         gbc.anchor = GridBagConstraints.CENTER;
         panel.add(loginButton, gbc);
 
+        registerButton = new JButton("新規登録");
+        registerButton.addActionListener(this::onRegisterButtonClicked);
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        gbc.gridwidth = 2;
+        gbc.anchor = GridBagConstraints.CENTER;
+        panel.add(registerButton, gbc);
+
         setContentPane(panel);
         pack();
         setLocationRelativeTo(null);
@@ -110,6 +122,11 @@ public class LoginFrame extends JFrame {
         } finally {
             loginButton.setEnabled(true);
         }
+    }
+
+    private void onRegisterButtonClicked(ActionEvent event) {
+        UserRegistrationFrame registrationFrame = new UserRegistrationFrame(userService);
+        registrationFrame.setVisible(true);
     }
 
     private void onLoginSuccess(User user) {

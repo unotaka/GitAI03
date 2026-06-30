@@ -1,6 +1,7 @@
 package com.example.ai03.ui;
 
 import com.example.ai03.service.AuthService;
+import com.example.ai03.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -15,12 +16,13 @@ import javax.swing.SwingUtilities;
 public class SwingApplicationRunner implements ApplicationRunner {
 
     private final AuthService authService;
+    private final UserService userService;
 
     @Override
     public void run(ApplicationArguments args) {
         log.info("Launching login screen");
         SwingUtilities.invokeLater(() -> {
-            LoginFrame loginFrame = new LoginFrame(authService);
+            LoginFrame loginFrame = new LoginFrame(authService, userService);
             loginFrame.setVisible(true);
         });
     }

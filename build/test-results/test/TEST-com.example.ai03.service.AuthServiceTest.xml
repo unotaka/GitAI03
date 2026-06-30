@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.example.ai03.service.AuthServiceTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-06-29T10:24:16.952Z" hostname="runnervmmklqx" time="0.424">
+<testsuite name="com.example.ai03.service.AuthServiceTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-06-30T02:51:08.728Z" hostname="runnervmmklqx" time="0.389">
   <properties/>
-  <testcase name="authenticateThrowsWhenPasswordMismatch()" classname="com.example.ai03.service.AuthServiceTest" time="0.4"/>
-  <testcase name="authenticateSucceedsWithValidCredentials()" classname="com.example.ai03.service.AuthServiceTest" time="0.011"/>
-  <testcase name="authenticateThrowsWhenUserNotFound()" classname="com.example.ai03.service.AuthServiceTest" time="0.007"/>
-  <system-out><![CDATA[2026-06-29T10:24:17.344Z  WARN 8528 --- [ai03] [    Test worker] c.e.ai03.service.impl.AuthServiceImpl    : Authentication failed for loginId: user01
-2026-06-29T10:24:17.363Z  INFO 8528 --- [ai03] [    Test worker] c.e.ai03.service.impl.AuthServiceImpl    : Authentication successful for loginId: user01
+  <testcase name="authenticateThrowsWhenPasswordMismatch()" classname="com.example.ai03.service.AuthServiceTest" time="0.369"/>
+  <testcase name="authenticateSucceedsWithValidCredentials()" classname="com.example.ai03.service.AuthServiceTest" time="0.01"/>
+  <testcase name="authenticateThrowsWhenUserNotFound()" classname="com.example.ai03.service.AuthServiceTest" time="0.005"/>
+  <system-out><![CDATA[2026-06-30T02:51:09.089Z  WARN 5886 --- [ai03] [    Test worker] c.e.ai03.service.impl.AuthServiceImpl    : Authentication failed for loginId: user01
+2026-06-30T02:51:09.107Z  INFO 5886 --- [ai03] [    Test worker] c.e.ai03.service.impl.AuthServiceImpl    : Authentication successful for loginId: user01
 ]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>
