@@ -3,6 +3,7 @@ package com.example.ai03.ui;
 import com.example.ai03.domain.entity.User;
 import com.example.ai03.exception.BusinessException;
 import com.example.ai03.service.AuthService;
+import com.example.ai03.service.TaskService;
 import com.example.ai03.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -27,15 +28,17 @@ public class LoginFrame extends JFrame {
 
     private final AuthService authService;
     private final UserService userService;
+    private final TaskService taskService;
 
     private JTextField userIdField;
     private JPasswordField passwordField;
     private JButton loginButton;
     private JButton registerButton;
 
-    public LoginFrame(AuthService authService, UserService userService) {
+    public LoginFrame(AuthService authService, UserService userService, TaskService taskService) {
         this.authService = authService;
         this.userService = userService;
+        this.taskService = taskService;
         initComponents();
     }
 
@@ -130,13 +133,9 @@ public class LoginFrame extends JFrame {
     }
 
     private void onLoginSuccess(User user) {
-        JOptionPane.showMessageDialog(
-            this,
-            user.getDisplayName() + " さん、ようこそ！",
-            "ログイン成功",
-            JOptionPane.INFORMATION_MESSAGE
-        );
         dispose();
+        MainFrame mainFrame = new MainFrame(user, authService, userService, taskService);
+        mainFrame.setVisible(true);
     }
 
     private void showErrorDialog(String message) {

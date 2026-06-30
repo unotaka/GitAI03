@@ -1,9 +1,10 @@
 {
-  "TASK_ID": "AI03-7",
-  "PAGE_ID": "38f4c3b4-a172-8048-9ba9-ef8f429ec616",
-  "TITLE": "画面：ユーザー登録",
-  "CLASS_NAME": "",
+  "TASK_ID": "AI03-2",
+  "PAGE_ID": "96c4c3b4-a172-8201-b920-019fc024dd8b",
+  "TITLE": "画面：メイン",
+  "CLASS_NAME": "MainFrame",
   "PACKAGE_NAME": "",
-  "SCREEN_ITEMS": "# 入力項目\n• ユーザID\n• パスワード\n# ボタン\n  • 登録\n  • キャンセル",
-  "DESCRIPTION": "【機能概要】\nテーブル：ユーザマスタ　へ、ユーザの登録処理を実施する\n\n【仕様詳細】\n特になし\n\n【事前入力チェック状況】\n未定義"
+  "SCREEN_ITEMS": "",
+  "DESCRIPTION": "【機能概要】\nタスク管理用の画面\n\n【仕様詳細】\n特になし\n\n【事前入力チェック状況】\n未定義",
+  "ASSIGNEE": "宇野隆行"
 }
